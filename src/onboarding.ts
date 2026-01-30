@@ -1,4 +1,4 @@
-import type { MoltbotConfig } from "moltbot/plugin-sdk";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
 
 import { listNdrAccountIds, resolveNdrAccount, resolveDefaultNdrAccountId } from "./types.js";
 
@@ -7,7 +7,7 @@ const channel = "ndr" as const;
 type ChannelOnboardingAdapter = {
   channel: typeof channel;
   getStatus: (ctx: {
-    cfg: MoltbotConfig;
+    cfg: OpenClawConfig;
   }) => Promise<{
     channel: typeof channel;
     configured: boolean;
@@ -16,7 +16,7 @@ type ChannelOnboardingAdapter = {
     quickstartScore?: number;
   }>;
   configure: (ctx: {
-    cfg: MoltbotConfig;
+    cfg: OpenClawConfig;
     prompter: {
       note: (message: string, title?: string) => Promise<void>;
       text: (opts: {
@@ -27,8 +27,8 @@ type ChannelOnboardingAdapter = {
       }) => Promise<string>;
       confirm: (opts: { message: string; initialValue?: boolean }) => Promise<boolean>;
     };
-  }) => Promise<{ cfg: MoltbotConfig; accountId?: string }>;
-  disable?: (cfg: MoltbotConfig) => MoltbotConfig;
+  }) => Promise<{ cfg: OpenClawConfig; accountId?: string }>;
+  disable?: (cfg: OpenClawConfig) => OpenClawConfig;
 };
 
 /**
@@ -159,7 +159,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       const os = await import("os");
       const path = await import("path");
 
-      // Use ~/.moltbot/ndr-data to match channel plugin's default dataDir
+      // Use ~/.openclaw/ndr-data to match channel plugin's default dataDir
       const ndrDataDir = path.join(os.homedir(), ".moltbot", "ndr-data");
       const ndrCmd = `ndr --data-dir "${ndrDataDir}" --json`;
 
@@ -190,7 +190,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       // Send hello message if we got a chat ID
       if (chatId) {
         try {
-          execSync(`${ndrCmd} send "${chatId}" "Hello! I'm your moltbot agent."`, {
+          execSync(`${ndrCmd} send "${chatId}" "Hello! I'm your openclaw agent."`, {
             encoding: "utf-8",
             timeout: 30000,
           });
@@ -200,7 +200,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       }
     }
 
-    const next: MoltbotConfig = {
+    const next: OpenClawConfig = {
       ...cfg,
       channels: {
         ...cfg.channels,
@@ -228,7 +228,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       successMsg.push("", "Install ndr CLI and join manually:", `  ndr chat join "${inviteUrl.trim()}"`);
     }
 
-    successMsg.push("", "Start the gateway: moltbot gateway run");
+    successMsg.push("", "Start the gateway: openclaw gateway run");
 
     await prompter.note(successMsg.join("\n"), "Setup Complete");
 

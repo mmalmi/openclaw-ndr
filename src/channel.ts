@@ -3,7 +3,7 @@ import {
   DEFAULT_ACCOUNT_ID,
   type ChannelPlugin,
   createReplyPrefixContext,
-} from "moltbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 
 import { NdrConfigSchema } from "./config-schema.js";
 import { getNdrRuntime } from "./runtime.js";
@@ -233,7 +233,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             return;
           }
 
-          // Process the message through moltbot's reply pipeline
+          // Process the message through openclaw's reply pipeline
           const cfg = runtime.config.loadConfig();
           const ndrTo = `ndr:${chatId}`;
 

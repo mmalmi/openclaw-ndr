@@ -1,4 +1,4 @@
-import type { MoltbotConfig } from "moltbot/plugin-sdk";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { homedir } from "os";
 import { join } from "path";
 import { DEFAULT_RELAYS, type NdrConfig } from "./config-schema.js";
@@ -28,7 +28,7 @@ export interface ResolvedNdrAccount {
 /**
  * List all configured NDR account IDs
  */
-export function listNdrAccountIds(cfg: MoltbotConfig): string[] {
+export function listNdrAccountIds(cfg: OpenClawConfig): string[] {
   const channels = (cfg.channels ?? {}) as Record<string, unknown>;
   const ndrConfig = channels.ndr;
   if (!ndrConfig || typeof ndrConfig !== "object") {
@@ -41,7 +41,7 @@ export function listNdrAccountIds(cfg: MoltbotConfig): string[] {
 /**
  * Resolve the default NDR account ID
  */
-export function resolveDefaultNdrAccountId(cfg: MoltbotConfig): string | undefined {
+export function resolveDefaultNdrAccountId(cfg: OpenClawConfig): string | undefined {
   const ids = listNdrAccountIds(cfg);
   return ids.length > 0 ? ids[0] : undefined;
 }
@@ -50,7 +50,7 @@ export function resolveDefaultNdrAccountId(cfg: MoltbotConfig): string | undefin
  * Resolve NDR account configuration
  */
 export function resolveNdrAccount(opts: {
-  cfg: MoltbotConfig;
+  cfg: OpenClawConfig;
   accountId?: string;
 }): ResolvedNdrAccount {
   const { cfg, accountId = "default" } = opts;
@@ -75,8 +75,8 @@ export function resolveNdrAccount(opts: {
     ownerPubkey,
     relays,
     ndrPath: ndrConfig.ndrPath ?? "ndr",
-    // Default to ~/.moltbot/ndr-data for persistence (container mounts ~/.moltbot)
-    dataDir: expandTilde(ndrConfig.dataDir ?? "~/.moltbot/ndr-data"),
+    // Default to ~/.openclaw/ndr-data for persistence (container mounts ~/.openclaw)
+    dataDir: expandTilde(ndrConfig.dataDir ?? "~/.openclaw/ndr-data"),
     config: ndrConfig,
   };
 }
