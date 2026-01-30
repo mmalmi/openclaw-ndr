@@ -160,7 +160,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       const path = await import("path");
 
       // Use ~/.openclaw/ndr-data to match channel plugin's default dataDir
-      const ndrDataDir = path.join(os.homedir(), ".moltbot", "ndr-data");
+      const ndrDataDir = path.join(os.homedir(), ".openclaw", "ndr-data");
       const ndrCmd = `ndr --data-dir "${ndrDataDir}" --json`;
 
       // Accept the invite

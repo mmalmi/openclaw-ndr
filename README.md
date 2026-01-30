@@ -1,6 +1,6 @@
-# moltbot-plugin-ndr
+# @openclaw/ndr
 
-Moltbot channel plugin for [nostr-double-ratchet](https://files.iris.to/#/npub1xndmdgymsf4a34rzr7346vp8qcptxf75pjqweh8naa8rklgxpfqqmfjtce/nostr-double-ratchet) - forward-secure end-to-end encrypted messaging over Nostr.
+OpenClaw channel plugin for [nostr-double-ratchet](https://files.iris.to/#/npub1xndmdgymsf4a34rzr7346vp8qcptxf75pjqweh8naa8rklgxpfqqmfjtce/nostr-double-ratchet) - forward-secure end-to-end encrypted messaging over Nostr.
 
 Compatible with [chat.iris.to](https://chat.iris.to).
 
@@ -9,7 +9,7 @@ Compatible with [chat.iris.to](https://chat.iris.to).
 - **Forward secrecy** - Past messages remain secure even if keys are compromised
 - **Double ratchet encryption** - Based on Signal's proven protocol
 - **Nostr transport** - Messages sent via Nostr relays
-- **CLI integration** - Uses the `ndr` CLI for encryption/decryption
+- **Interactive onboarding** - `openclaw onboard` walks you through setup
 
 ## Prerequisites
 
@@ -22,29 +22,54 @@ curl -sSf https://sh.rustup.rs | sh && cargo install ndr hashtree-cli
 - **ndr** - Required for double ratchet encryption
 - **hashtree-cli** - Optional, for encrypted media uploads via [hashtree](https://github.com/mmalmi/hashtree)
 
-
 ## Installation
 
-> **Note:** Moltbot's plugin system is under active development. These instructions may change.
+> **Note:** OpenClaw's plugin system is under active development. These instructions may change.
 
-From npm (once published):
+From GitHub:
 
 ```bash
-moltbot plugins install moltbot-plugin-ndr
+openclaw plugins install https://github.com/mmalmi/openclaw-ndr
 ```
 
 From a local clone:
 
 ```bash
-git clone https://github.com/mmalmi/moltbot-ndr
-moltbot plugins install -l ./moltbot-ndr
+git clone https://github.com/mmalmi/openclaw-ndr
+openclaw plugins install -l ./openclaw-ndr
 ```
 
-This copies (or symlinks with `-l`) the plugin into `~/.clawdbot/extensions/ndr/`, installs its dependencies, and enables it in your moltbot config.
+## Setup
+
+Run the interactive onboarding:
+
+```bash
+openclaw onboard
+```
+
+Select the NDR channel when prompted. The onboarding will:
+
+1. Check if `ndr` CLI is installed
+2. Ask you to paste a chat invite URL from [chat.iris.to](https://chat.iris.to)
+3. Accept the invite and send a hello message
+4. Configure your owner pubkey (so only you can control the agent)
+
+### Getting a chat invite URL
+
+1. Go to [chat.iris.to](https://chat.iris.to)
+2. Click the **+** (New Chat) button
+3. Click **Copy your chat link**
+4. Paste it into the onboarding prompt
+
+### Start the gateway
+
+```bash
+openclaw gateway run
+```
 
 ## Configuration
 
-Add to your `~/.moltbot/moltbot.json`:
+The onboarding writes config to `~/.openclaw/openclaw.json`. You can also edit it manually:
 
 ```json5
 {
@@ -65,11 +90,8 @@ Add to your `~/.moltbot/moltbot.json`:
       // Optional: Path to ndr CLI (default: "ndr" in PATH)
       ndrPath: "/path/to/ndr",
 
-      // Optional: Custom data directory for ndr
-      dataDir: "~/.ndr-moltbot",
-
-      // Optional: Private key (hex or nsec). If not provided, ndr auto-generates one.
-      // privateKey: "nsec1...",
+      // Optional: Custom data directory for ndr (default: ~/.openclaw/ndr-data)
+      dataDir: "~/.openclaw/ndr-data",
     }
   }
 }
@@ -77,63 +99,15 @@ Add to your `~/.moltbot/moltbot.json`:
 
 **Authorization:**
 - Only messages from `ownerPubkey` are handled as agent commands
-- Messages from other pubkeys are logged but ignored (for now)
-- If `ownerPubkey` is not set, all messages are handled (legacy behavior)
-
-## Setup
-
-The ndr CLI auto-generates an identity on first use.
-
-### 1. Check your identity
-
-```bash
-ndr whoami
-```
-
-This shows your npub. Share this with people who want to message you.
-
-### 2. Create an invite (to let others connect to you)
-
-```bash
-ndr invite create --label "moltbot"
-```
-
-Share the invite URL with the person you want to chat with. They accept it with `ndr chat join <url>`.
-
-### 3. Join someone else's invite
-
-```bash
-ndr chat join <invite_url>
-```
-
-This creates a chat session. You can now send/receive messages.
-
-### 4. Configure your owner pubkey
-
-Add your npub to the config so only you can control the agent:
-
-```json5
-{
-  channels: {
-    ndr: {
-      ownerPubkey: "npub1..."  // your npub from step 1
-    }
-  }
-}
-```
-
-### 5. Start the gateway
-
-```bash
-moltbot gateway run
-```
+- Messages from other pubkeys are logged but ignored
+- If `ownerPubkey` is not set, all messages are handled
 
 ## Usage
 
 ### Check channel status
 
 ```bash
-moltbot channels status --channel ndr
+openclaw channels status --channel ndr
 ```
 
 ### List active chats
@@ -142,43 +116,24 @@ moltbot channels status --channel ndr
 ndr chat list
 ```
 
-### Send a message
-
-```bash
-moltbot message send --channel ndr --to <chat_id> --message "Hello!"
-```
-
 ## How it works
 
-1. **Initialization** - ndr auto-generates an identity if not logged in
-2. **Listening** - Runs `ndr listen` to receive incoming messages
-3. **Receiving** - Decrypts messages using the double ratchet session
-4. **Sending** - Uses `ndr send` to encrypt and publish messages
-5. **Session management** - ndr handles key rotation automatically
+1. **Listening** - Runs `ndr listen` to receive incoming messages
+2. **Receiving** - Decrypts messages using the double ratchet session
+3. **Sending** - Uses `ndr send` to encrypt and publish messages
+4. **Session management** - ndr handles key rotation automatically
 
 ## Security
 
-- **No key exposure** - Private keys are only passed to the ndr CLI
 - **Forward secrecy** - Each message uses a unique encryption key
 - **Session isolation** - Each chat has its own ratchet state
-
-## Comparison with Nostr NIP-04
-
-| Feature | NDR (Double Ratchet) | Nostr NIP-04 |
-|---------|---------------------|--------------|
-| Forward secrecy | Yes | No |
-| Key rotation | Automatic | None |
-| Session state | Required | Stateless |
-| Complexity | Higher | Lower |
-
-Use NDR for high-security conversations where forward secrecy matters.
-Use NIP-04 for simpler use cases where stateless encryption is acceptable.
+- **No key exposure** - Private keys are managed by the ndr CLI
 
 ## Troubleshooting
 
 ### "ndr: command not found"
 
-Install ndr CLI: `cargo install ndr`
+Install: `cargo install ndr`
 
 ### "Failed to send message"
 
