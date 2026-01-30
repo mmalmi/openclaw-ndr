@@ -102,14 +102,27 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       // ndr not found
     }
 
-    if (!ndrAvailable) {
+    // Check if hashtree-cli is available (for media attachments)
+    let hashtreeAvailable = false;
+    try {
+      const { execSync: exec2 } = await import("child_process");
+      exec2("hashtree-cli --version", { stdio: "ignore" });
+      hashtreeAvailable = true;
+    } catch {
+      // hashtree-cli not found
+    }
+
+    if (!ndrAvailable || !hashtreeAvailable) {
+      const missing: string[] = [];
+      if (!ndrAvailable) missing.push("ndr (required for messaging)");
+      if (!hashtreeAvailable) missing.push("hashtree-cli (required for media attachments)");
       await prompter.note(
         [
-          "ndr CLI not found in PATH.",
+          `Missing: ${missing.join(", ")}`,
           "",
-          "Install: cargo install ndr",
+          "Install: cargo install ndr hashtree-cli",
           "",
-          "You can configure now and install ndr later.",
+          "You can configure now and install later.",
         ].join("\n"),
         "Warning",
       );
