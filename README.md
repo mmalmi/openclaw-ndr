@@ -131,9 +131,17 @@ ndr chat list
 
 ## Troubleshooting
 
-### "ndr: command not found"
+### "ndr: command not found" / "hashtree-cli: command not found"
 
-Install: `cargo install ndr`
+Install both (requires Rust):
+
+```bash
+curl -sSf https://sh.rustup.rs | sh && cargo install ndr hashtree-cli
+```
+
+### Media attachments not working
+
+Make sure `hashtree-cli` is installed: `hashtree-cli --version`
 
 ### "Failed to send message"
 
