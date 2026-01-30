@@ -17,6 +17,9 @@ declare module "openclaw/plugin-sdk" {
     config: {
       loadConfig(): OpenClawConfig;
     };
+    system: {
+      enqueueSystemEvent(text: string, options?: { sessionKey?: string; contextKey?: string }): void;
+    };
     channel: {
       text: {
         resolveMarkdownTableMode(opts: {

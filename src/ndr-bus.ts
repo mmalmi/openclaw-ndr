@@ -13,6 +13,7 @@ export interface NdrBusOptions {
   ndrPath: string;
   dataDir: string | null;
   onMessage: (chatId: string, messageId: string, senderPubkey: string, text: string, reply: (text: string) => Promise<void>, media?: NdrMessageMedia) => Promise<void>;
+  onReaction?: (chatId: string, fromPubkey: string, messageId: string, emoji: string) => void;
   onNewSession?: (chatId: string, theirPubkey: string) => Promise<void>;
   onError?: (error: Error, context: string) => void;
   onConnect?: () => void;
@@ -43,6 +44,7 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
     ndrPath,
     dataDir,
     onMessage,
+    onReaction,
     onNewSession,
     onError,
     onConnect,
@@ -102,6 +104,11 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
                 onError?.(handlerErr, "message_handler");
               });
             });
+          }
+
+          // Handle incoming reactions
+          if (json.event === "reaction") {
+            onReaction?.(json.chat_id, json.from_pubkey, json.message_id, json.emoji);
           }
 
           // Handle new sessions from invite responses

@@ -198,6 +198,22 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         relays: account.relays,
         ndrPath: account.ndrPath,
         dataDir: account.dataDir,
+        onReaction: (chatId, fromPubkey, messageId, emoji) => {
+          const cfg = runtime.config.loadConfig();
+          const route = runtime.channel.routing.resolveAgentRoute({
+            cfg,
+            channel: "ndr",
+            accountId: account.accountId,
+            peer: { kind: "dm", id: chatId },
+          });
+          const label = fromPubkey.slice(0, 8);
+          const text = `NDR reaction: ${emoji} by ${label} on msg ${messageId}`;
+          runtime.system.enqueueSystemEvent(text, {
+            sessionKey: route.sessionKey,
+            contextKey: `ndr:reaction:add:${chatId}:${messageId}:${fromPubkey}:${emoji}`,
+          });
+          ctx.log?.debug(`[${account.accountId}] ${text}`);
+        },
         onMessage: async (chatId, messageId, senderPubkey, text, replyFn, media) => {
           ctx.log?.debug(`[${account.accountId}] Message from ${senderPubkey} in chat ${chatId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
 
