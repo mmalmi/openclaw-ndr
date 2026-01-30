@@ -3,6 +3,8 @@ import {
   DEFAULT_ACCOUNT_ID,
   type ChannelPlugin,
   createReplyPrefixContext,
+  createTypingCallbacks,
+  logTypingFailure,
 } from "openclaw/plugin-sdk";
 
 import { NdrConfigSchema } from "./config-schema.js";
@@ -300,11 +302,26 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           // Create reply prefix context
           const prefixContext = createReplyPrefixContext({ cfg, agentId: route.agentId });
 
-          // Create dispatcher with typing (simplified - no typing indicator for NDR)
+          // Create typing callbacks
+          const typingCallbacks = createTypingCallbacks({
+            start: async () => {
+              await bus.sendTyping(chatId);
+            },
+            onStartError: (err) => {
+              logTypingFailure({
+                log: (...args: unknown[]) => ctx.log?.debug(String(args.join(" "))),
+                channel: "ndr",
+                target: chatId,
+                error: err,
+              });
+            },
+          });
+
           const { dispatcher, replyOptions, markDispatchIdle } = runtime.channel.reply.createReplyDispatcherWithTyping({
             responsePrefix: prefixContext.responsePrefix,
             responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
             humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
+            onReplyStart: typingCallbacks.onReplyStart,
             deliver: async (payload) => {
               ctx.log?.info(`[${account.accountId}] NDR deliver called with payload: ${JSON.stringify(payload).slice(0, 200)}`);
               const responseText = payload.text ?? "";

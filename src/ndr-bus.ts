@@ -23,6 +23,7 @@ export interface NdrBusHandle {
   sendMessage: (chatId: string, text: string) => Promise<void>;
   react: (chatId: string, messageId: string, emoji: string) => Promise<void>;
   sendReceipt: (chatId: string, receiptType: 'delivered' | 'seen', messageIds: string[]) => Promise<void>;
+  sendTyping: (chatId: string) => Promise<void>;
   createInvite: () => Promise<{ inviteUrl: string; inviteId: string }>;
   joinInvite: (inviteUrl: string) => Promise<{ chatId: string; theirPubkey: string }>;
   listChats: () => Promise<Array<{ id: string; their_pubkey: string }>>;
@@ -160,6 +161,13 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
       const result = await runNdrCommand(ndrPath, [...baseArgs, "receipt", chatId, receiptType, ...messageIds]);
       if (result.status !== "ok") {
         throw new Error(result.error || "Failed to send receipt");
+      }
+    },
+
+    sendTyping: async (chatId: string) => {
+      const result = await runNdrCommand(ndrPath, [...baseArgs, "typing", chatId]);
+      if (result.status !== "ok") {
+        throw new Error(result.error || "Failed to send typing indicator");
       }
     },
 
