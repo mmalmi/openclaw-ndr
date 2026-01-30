@@ -36,8 +36,8 @@ moltbot plugins install moltbot-plugin-ndr
 From a local clone:
 
 ```bash
-git clone https://github.com/mmalmi/nostr-double-ratchet
-moltbot plugins install -l ./nostr-double-ratchet
+git clone https://github.com/mmalmi/moltbot-ndr
+moltbot plugins install -l ./moltbot-ndr
 ```
 
 This copies (or symlinks with `-l`) the plugin into `~/.clawdbot/extensions/ndr/`, installs its dependencies, and enables it in your moltbot config.

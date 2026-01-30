@@ -6,7 +6,7 @@
   "keywords": ["moltbot", "nostr", "double-ratchet", "ndr", "e2e", "encryption", "chat"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/mmalmi/nostr-double-ratchet"
+    "url": "https://github.com/mmalmi/moltbot-ndr"
   },
   "license": "MIT",
   "packageManager": "pnpm@10.28.2",
