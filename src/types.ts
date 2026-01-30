@@ -94,12 +94,36 @@ function normalizePubkey(input: string): string {
 
   // npub format - decode bech32
   if (trimmed.startsWith("npub1")) {
-    const { nip19 } = require("nostr-tools");
-    const decoded = nip19.decode(trimmed);
-    if (decoded.type === "npub") {
-      return decoded.data as string;
-    }
+    return decodeBech32Hex(trimmed);
   }
 
   throw new Error(`Invalid pubkey format: ${input}`);
+}
+
+const BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+function decodeBech32Hex(bech32: string): string {
+  const lower = bech32.toLowerCase();
+  const sepIdx = lower.lastIndexOf("1");
+  if (sepIdx < 1) throw new Error("Invalid bech32 string");
+  const data = lower.slice(sepIdx + 1);
+  // Drop 6-char checksum, decode 5-bit values
+  const values: number[] = [];
+  for (let i = 0; i < data.length - 6; i++) {
+    const v = BECH32_ALPHABET.indexOf(data[i]);
+    if (v === -1) throw new Error(`Invalid bech32 char: ${data[i]}`);
+    values.push(v);
+  }
+  // Convert 5-bit groups to 8-bit bytes
+  let acc = 0, bits = 0;
+  const bytes: number[] = [];
+  for (const v of values) {
+    acc = (acc << 5) | v;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((acc >> bits) & 0xff);
+    }
+  }
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }

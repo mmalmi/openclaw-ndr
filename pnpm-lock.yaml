@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      nostr-tools:
-        specifier: ^2.20.0
-        version: 2.21.0(typescript@5.9.3)
       openclaw:
         specifier: '*'
         version: 2026.1.29(@types/express@5.0.6)(devtools-protocol@0.0.1575685)(typescript@5.9.3)
@@ -601,24 +598,6 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
-
-  '@jsr/noble__ciphers@2.1.1':
-    resolution: {integrity: sha512-Iiq+NjX8RBUJek03czcW3DvnN3X85Af3TtYzOwdQ2fgRiGu8lXsFPZM1xGygxiu7tAt888692xB7GmAZ+U8nSQ==, tarball: https://npm.jsr.io/~/11/@jsr/noble__ciphers/2.1.1.tgz}
-
-  '@jsr/noble__curves@2.0.1':
-    resolution: {integrity: sha512-W9f7/HjpYhYPz7aShh9KqdBV0oCLJFJOuoalSnTyHsqm3ZzJYKlM7Km3Vj0ClmxqYVzWuiPnWkz11fSEe5yNIQ==, tarball: https://npm.jsr.io/~/11/@jsr/noble__curves/2.0.1.tgz}
-
-  '@jsr/noble__hashes@2.0.1':
-    resolution: {integrity: sha512-dmQSiSKzmUJOyMalZcFr4Qg3bl2aenVxEWEUrqZmTFGnkGNu0mvZJWAYx/FHEJmr+uN/T1WZAbpV3fEcUysGjw==, tarball: https://npm.jsr.io/~/11/@jsr/noble__hashes/2.0.1.tgz}
-
-  '@jsr/scure__base@2.0.0':
-    resolution: {integrity: sha512-um6TO/LfMyhcWvbCv1aQm+Ix0ZY2VFqKShPg/kF6V+XJbryHyJOR8lFNCVdHZudMEVW2lHbUOTPSVivt5RtvxA==, tarball: https://npm.jsr.io/~/11/@jsr/scure__base/2.0.0.tgz}
-
-  '@jsr/scure__bip32@2.0.1':
-    resolution: {integrity: sha512-/+64ZfWc9r0uuJ611B1vMUo1SSM5VLrlZmYNvQEqQKkG71BnCxPqpn7UFXtHG8ql0lvcBbjoOK2B0/uTDMafbg==, tarball: https://npm.jsr.io/~/11/@jsr/scure__bip32/2.0.1.tgz}
-
-  '@jsr/scure__bip39@2.0.1':
-    resolution: {integrity: sha512-3+WqsT1K0+4OteY8gXBmSh383xTdNgIwYqleIGmUVr/rePRBnl2oENT7TPxveYhTPYMaD01DA8I7ttZS+HZVsg==, tarball: https://npm.jsr.io/~/11/@jsr/scure__bip39/2.0.1.tgz}
 
   '@keyv/bigmap@1.3.1':
     resolution: {integrity: sha512-WbzE9sdmQtKy8vrNPa9BRnwZh5UF4s1KTmSK0KUVLo3eff5BlQNNWDnFOouNpKfPKDnms9xynJjsMYjMaT/aFQ==}
@@ -2576,17 +2555,6 @@ packages:
       typescript:
         optional: true
 
-  nostr-tools@2.21.0:
-    resolution: {integrity: sha512-14Vo0fY0jJ7V5OLyDHtirrwkwiOd8thQkbR+u5m9C7NbSnw8vcyCN+6vUBLvQ/Z7GqMtlnwFs8dTOLEJoRyjwA==}
-    peerDependencies:
-      typescript: '>=5.0.0'
-    peerDependenciesMeta:
-      typescript:
-        optional: true
-
-  nostr-wasm@0.1.0:
-    resolution: {integrity: sha512-78BTryCLcLYv96ONU8Ws3Q1JzjlAt+43pWQhIl86xZmWeegYCNLPml7yQ+gG3vR6V5h4XGj+TxO+SS5dsThQIA==}
-
   npmlog@6.0.2:
     resolution: {integrity: sha512-/vBvz5Jfr9dT/aFWd0FIRf+T/Q2WBsLENygUaFUqstqsycmZAP/t5BvFJTK0viFmSUxiUKTUplWy5vt+rvKIxg==}
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
@@ -4229,27 +4197,6 @@ snapshots:
       minipass: 7.1.2
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
-
-  '@jsr/noble__ciphers@2.1.1': {}
-
-  '@jsr/noble__curves@2.0.1':
-    dependencies:
-      '@jsr/noble__hashes': 2.0.1
-
-  '@jsr/noble__hashes@2.0.1': {}
-
-  '@jsr/scure__base@2.0.0': {}
-
-  '@jsr/scure__bip32@2.0.1':
-    dependencies:
-      '@jsr/noble__curves': 2.0.1
-      '@jsr/noble__hashes': 2.0.1
-      '@jsr/scure__base': 2.0.0
-
-  '@jsr/scure__bip39@2.0.1':
-    dependencies:
-      '@jsr/noble__hashes': 2.0.1
-      '@jsr/scure__base': 2.0.0
 
   '@keyv/bigmap@1.3.1(keyv@5.6.0)':
     dependencies:
@@ -6439,20 +6386,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
     optional: true
-
-  nostr-tools@2.21.0(typescript@5.9.3):
-    dependencies:
-      '@noble/ciphers': '@jsr/noble__ciphers@2.1.1'
-      '@noble/curves': '@jsr/noble__curves@2.0.1'
-      '@noble/hashes': '@jsr/noble__hashes@2.0.1'
-      '@scure/base': '@jsr/scure__base@2.0.0'
-      '@scure/bip32': '@jsr/scure__bip32@2.0.1'
-      '@scure/bip39': '@jsr/scure__bip39@2.0.1'
-      nostr-wasm: 0.1.0
-    optionalDependencies:
-      typescript: 5.9.3
-
-  nostr-wasm@0.1.0: {}
 
   npmlog@6.0.2:
     dependencies:

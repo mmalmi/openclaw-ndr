@@ -23,7 +23,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "nostr-tools": "^2.20.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
