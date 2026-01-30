@@ -86,16 +86,14 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       if (!bus) {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
-      // Resolve npub to chat_id if needed
-      const chatId = await resolveNpubToChatId(bus, to);
       const tableMode = core.channel.text.resolveMarkdownTableMode({
         cfg: core.config.loadConfig(),
         channel: "ndr",
         accountId: aid,
       });
       const message = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
-      await bus.sendMessage(chatId, message);
-      return { channel: "ndr", to: chatId };
+      await bus.sendMessage(to, message);
+      return { channel: "ndr", to };
     },
     sendMedia: async ({ to, text, mediaUrl, accountId }: { to: string; text?: string; mediaUrl?: string; accountId?: string }) => {
       const core = getNdrRuntime();
@@ -104,8 +102,6 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       if (!bus) {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
-      // Resolve npub to chat_id if needed
-      const chatId = await resolveNpubToChatId(bus, to);
       const caption = text ? `${text}\n` : "";
 
       // mediaUrl could be a local file path or a remote URL
@@ -132,8 +128,8 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       }
 
       const message = `${caption}${mediaLink}`;
-      await bus.sendMessage(chatId, message);
-      return { channel: "ndr", to: chatId };
+      await bus.sendMessage(to, message);
+      return { channel: "ndr", to };
     },
   },
 
@@ -388,81 +384,3 @@ export function getActiveNdrBuses(): Map<string, NdrBusHandle> {
   return new Map(activeBuses);
 }
 
-/**
- * Resolve npub to chat_id by looking up the chat list.
- * If the target is already a chat_id (8-char hex), returns it unchanged.
- * If it's an npub, finds the chat with matching their_pubkey.
- */
-async function resolveNpubToChatId(bus: NdrBusHandle, target: string): Promise<string> {
-  const trimmed = target.trim();
-
-  // If it's already a chat_id (8-char hex), return as-is
-  if (/^[0-9a-fA-F]{8}$/.test(trimmed)) {
-    return trimmed;
-  }
-
-  // If it's an npub, resolve to chat_id
-  if (trimmed.startsWith("npub1")) {
-    // Convert npub to hex pubkey
-    const hexPubkey = npubToHex(trimmed);
-    if (!hexPubkey) {
-      throw new Error(`Invalid npub: ${trimmed}`);
-    }
-
-    // Look up the chat with this pubkey
-    const chats = await bus.listChats();
-    const chat = chats.find((c) => c.their_pubkey === hexPubkey);
-    if (!chat) {
-      const availableChats = chats.length > 0
-        ? ` Available chats: ${chats.map((c) => c.id).join(", ")}`
-        : " No active chats found.";
-      throw new Error(`No chat found with pubkey ${trimmed.slice(0, 20)}...${availableChats}`);
-    }
-    return chat.id;
-  }
-
-  // Unknown format, try as-is (let ndr CLI handle it)
-  return trimmed;
-}
-
-/**
- * Convert bech32 npub to hex pubkey
- */
-function npubToHex(npub: string): string | null {
-  const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-  const CHARSET_REV: Record<string, number> = {};
-  for (let i = 0; i < CHARSET.length; i++) {
-    CHARSET_REV[CHARSET[i]] = i;
-  }
-
-  const bech = npub.toLowerCase();
-  const pos = bech.lastIndexOf("1");
-  if (pos < 1 || pos + 7 > bech.length) return null;
-
-  const hrp = bech.slice(0, pos);
-  if (hrp !== "npub") return null;
-
-  const data: number[] = [];
-  for (const c of bech.slice(pos + 1)) {
-    if (!(c in CHARSET_REV)) return null;
-    data.push(CHARSET_REV[c]);
-  }
-
-  // Remove checksum (last 6 chars)
-  const dataWithoutChecksum = data.slice(0, -6);
-
-  // Convert from 5-bit to 8-bit
-  let acc = 0;
-  let bits = 0;
-  const result: number[] = [];
-  for (const value of dataWithoutChecksum) {
-    acc = (acc << 5) | value;
-    bits += 5;
-    while (bits >= 8) {
-      bits -= 8;
-      result.push((acc >> bits) & 0xff);
-    }
-  }
-
-  return result.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
