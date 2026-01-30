@@ -25,15 +25,22 @@ curl -sSf https://sh.rustup.rs | sh && cargo install ndr hashtree-cli
 
 ## Installation
 
+> **Note:** Moltbot's plugin system is under active development. These instructions may change.
+
+From npm (once published):
+
 ```bash
 moltbot plugins install moltbot-plugin-ndr
 ```
 
-Or link for development:
+From a local clone:
 
 ```bash
-moltbot plugins install -l ./path/to/moltbot-ndr
+git clone https://github.com/mmalmi/nostr-double-ratchet
+moltbot plugins install -l ./nostr-double-ratchet
 ```
+
+This copies (or symlinks with `-l`) the plugin into `~/.clawdbot/extensions/ndr/`, installs its dependencies, and enables it in your moltbot config.
 
 ## Configuration
 
