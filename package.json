@@ -10,7 +10,7 @@
   },
   "license": "MIT",
   "packageManager": "pnpm@10.28.2",
-  "files": ["dist/", "src/", "index.ts", "openclaw.plugin.json", "README.md"],
+  "files": ["dist/", "src/", "index.ts", ".npmrc", "openclaw.plugin.json", "README.md"],
   "openclaw": {
     "id": "ndr",
     "extensions": [
