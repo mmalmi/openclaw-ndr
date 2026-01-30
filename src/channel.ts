@@ -202,12 +202,12 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         onMessage: async (chatId, messageId, senderPubkey, text, replyFn, media) => {
           ctx.log?.debug(`[${account.accountId}] Message from ${senderPubkey} in chat ${chatId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
 
-          // React with "eyes" emoji to indicate we're processing (like WhatsApp "typing" indicator)
+          // Send seen receipt - for a bot there's no delivered-but-unread state
           if (messageId) {
             try {
-              await bus.react(chatId, messageId, "\u{1F440}");
+              await bus.sendReceipt(chatId, "seen", [messageId]);
             } catch {
-              // Reaction failed, continue anyway
+              // Receipt failed, continue anyway
             }
           }
 
