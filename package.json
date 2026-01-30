@@ -1,0 +1,29 @@
+{
+  "name": "moltbot-plugin-ndr",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Moltbot channel plugin for nostr-double-ratchet (forward-secure E2E encryption)",
+  "keywords": ["moltbot", "nostr", "double-ratchet", "ndr", "e2e", "encryption", "chat"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mmalmi/nostr-double-ratchet"
+  },
+  "license": "MIT",
+  "files": ["dist/", "moltbot.plugin.json", "README.md"],
+  "moltbot": {
+    "id": "ndr",
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.20.0",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "moltbot": "*"
+  }
+}

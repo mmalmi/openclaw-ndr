@@ -1,0 +1,11 @@
+{
+  "id": "ndr",
+  "channels": [
+    "ndr"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
