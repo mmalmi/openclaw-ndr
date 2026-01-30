@@ -2,6 +2,7 @@ import {
   buildChannelConfigSchema,
   DEFAULT_ACCOUNT_ID,
   type ChannelPlugin,
+  type OpenClawConfig,
   createReplyPrefixContext,
   createTypingCallbacks,
   logTypingFailure,
@@ -43,16 +44,16 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   onboarding: ndrOnboardingAdapter,
 
   config: {
-    listAccountIds: (cfg) => listNdrAccountIds(cfg),
-    resolveAccount: (cfg, accountId) => resolveNdrAccount({ cfg, accountId }),
-    defaultAccountId: (cfg) => resolveDefaultNdrAccountId(cfg),
-    isConfigured: (account) => account.configured,
-    describeAccount: (account) => ({
+    listAccountIds: (cfg: OpenClawConfig) => listNdrAccountIds(cfg),
+    resolveAccount: (cfg: OpenClawConfig, accountId: string) => resolveNdrAccount({ cfg, accountId }),
+    defaultAccountId: (cfg: OpenClawConfig) => resolveDefaultNdrAccountId(cfg),
+    isConfigured: (account: ResolvedNdrAccount) => account.configured,
+    describeAccount: (account: ResolvedNdrAccount) => ({
       accountId: account.accountId,
       name: account.name,
       enabled: account.enabled,
       configured: account.configured,
-      publicKey: account.publicKey,
+      publicKey: account.ownerPubkey,
     }),
   },
 
@@ -61,12 +62,12 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   // No pairing/allowFrom config needed - the invite exchange IS the authorization.
 
   messaging: {
-    normalizeTarget: (target) => {
+    normalizeTarget: (target: string) => {
       // NDR uses chat IDs, not pubkeys directly
       return target.trim();
     },
     targetResolver: {
-      looksLikeId: (input) => {
+      looksLikeId: (input: string) => {
         const trimmed = input.trim();
         // Chat IDs are short hex strings
         return /^[0-9a-fA-F]{8}$/.test(trimmed) || trimmed.startsWith("npub1");
@@ -78,7 +79,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   outbound: {
     deliveryMode: "direct",
     textChunkLimit: 4000,
-    sendText: async ({ to, text, accountId }) => {
+    sendText: async ({ to, text, accountId }: { to: string; text?: string; accountId?: string }) => {
       const core = getNdrRuntime();
       const aid = accountId ?? DEFAULT_ACCOUNT_ID;
       const bus = activeBuses.get(aid);
@@ -96,7 +97,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       await bus.sendMessage(chatId, message);
       return { channel: "ndr", to: chatId };
     },
-    sendMedia: async ({ to, text, mediaUrl, accountId }) => {
+    sendMedia: async ({ to, text, mediaUrl, accountId }: { to: string; text?: string; mediaUrl?: string; accountId?: string }) => {
       const core = getNdrRuntime();
       const aid = accountId ?? DEFAULT_ACCOUNT_ID;
       const bus = activeBuses.get(aid);
@@ -144,8 +145,8 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       lastStopAt: null,
       lastError: null,
     },
-    collectStatusIssues: (accounts) =>
-      accounts.flatMap((account) => {
+    collectStatusIssues: (accounts: Array<Record<string, unknown>>) =>
+      accounts.flatMap((account: Record<string, unknown>) => {
         const lastError = typeof account.lastError === "string" ? account.lastError.trim() : "";
         if (!lastError) return [];
         return [
@@ -157,14 +158,14 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           },
         ];
       }),
-    buildChannelSummary: ({ snapshot }) => ({
+    buildChannelSummary: ({ snapshot }: { snapshot: Record<string, unknown> }) => ({
       configured: snapshot.configured ?? false,
       running: snapshot.running ?? false,
       lastStartAt: snapshot.lastStartAt ?? null,
       lastStopAt: snapshot.lastStopAt ?? null,
       lastError: snapshot.lastError ?? null,
     }),
-    buildAccountSnapshot: ({ account, runtime }) => ({
+    buildAccountSnapshot: ({ account, runtime }: { account: ResolvedNdrAccount; runtime?: Record<string, unknown> }) => ({
       accountId: account.accountId,
       name: account.name,
       enabled: account.enabled,
@@ -179,7 +180,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   },
 
   gateway: {
-    startAccount: async (ctx) => {
+    startAccount: async (ctx: { account: ResolvedNdrAccount; setStatus: (s: Record<string, unknown>) => void; log?: { info: (m: string) => void; debug: (m: string) => void; warn: (m: string) => void; error: (m: string) => void } }) => {
       const account = ctx.account;
       ctx.setStatus({
         accountId: account.accountId,
@@ -322,7 +323,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
             humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
             onReplyStart: typingCallbacks.onReplyStart,
-            deliver: async (payload) => {
+            deliver: async (payload: { text?: string }) => {
               ctx.log?.info(`[${account.accountId}] NDR deliver called with payload: ${JSON.stringify(payload).slice(0, 200)}`);
               const responseText = payload.text ?? "";
               if (responseText) {
@@ -333,7 +334,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
                 ctx.log?.warn(`[${account.accountId}] NDR deliver called but no text in payload`);
               }
             },
-            onError: (err, info) => {
+            onError: (err: unknown, info: { kind: string }) => {
               ctx.log?.error(`[${account.accountId}] NDR reply failed (${info.kind}): ${String(err)}`);
             },
           });
@@ -345,7 +346,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             dispatcher,
             replyOptions: {
               ...replyOptions,
-              onModelSelected: (modelCtx) => {
+              onModelSelected: (modelCtx: unknown) => {
                 prefixContext.onModelSelected(modelCtx);
               },
             },
