@@ -17,7 +17,9 @@ function hasNdr(): boolean {
   }
 }
 
-const describeLive = hasNdr() ? describe : describe.skip;
+const describeLive = hasNdr() && process.env.NDR_LIVE_TESTS === "1"
+  ? describe
+  : describe.skip;
 
 describeLive("ndr-bus (live)", () => {
   let dataDir: string;
@@ -91,6 +93,10 @@ describeLive("ndr-bus (live)", () => {
     let bobBus: NdrBusHandle | null = null;
 
     const received: Array<{ chatId: string; text: string }> = [];
+    let sessionReadyResolve: (() => void) | null = null;
+    const sessionReady = new Promise<void>((resolve) => {
+      sessionReadyResolve = resolve;
+    });
 
     try {
       // Start alice's bus
@@ -101,6 +107,9 @@ describeLive("ndr-bus (live)", () => {
         dataDir,
         onMessage: async (chatId, _msgId, _sender, text) => {
           received.push({ chatId, text });
+        },
+        onNewSession: async () => {
+          sessionReadyResolve?.();
         },
       });
 
@@ -120,6 +129,12 @@ describeLive("ndr-bus (live)", () => {
       const joined = await bobBus.joinInvite(invite.inviteUrl);
       expect(joined.chatId).toBeTruthy();
       expect(joined.theirPubkey).toBeTruthy();
+
+      // Wait for Alice to process session creation before sending
+      await Promise.race([
+        sessionReady,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("session timeout")), 15000)),
+      ]);
 
       // Bob sends message to alice
       await bobBus.sendMessage(joined.chatId, "hello from bob");

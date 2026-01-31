@@ -84,7 +84,7 @@ export function resolveNdrAccount(opts: {
 /**
  * Normalize a pubkey to hex format
  */
-function normalizePubkey(input: string): string {
+export function normalizePubkey(input: string): string {
   const trimmed = input.trim();
 
   // Already hex

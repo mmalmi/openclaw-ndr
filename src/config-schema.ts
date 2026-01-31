@@ -21,6 +21,15 @@ export const NdrConfigSchema = z.object({
 
   /** Custom data directory for ndr */
   dataDir: z.string().optional(),
+
+  /** Group policy: open | allowlist | disabled */
+  groupPolicy: z.enum(["open", "allowlist", "disabled"]).optional(),
+
+  /** Allowlist of sender pubkeys for group messages (npub or hex, '*' for any) */
+  groupAllowFrom: z.array(z.string()).optional(),
+
+  /** Allowlist of group IDs (UUIDs). When set, only listed groups are handled. */
+  groups: z.array(z.string()).optional(),
 });
 
 export type NdrConfig = z.infer<typeof NdrConfigSchema>;

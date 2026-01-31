@@ -15,12 +15,100 @@ import {
   resolveDefaultNdrAccountId,
   resolveNdrAccount,
   type ResolvedNdrAccount,
+  normalizePubkey,
 } from "./types.js";
 import { startNdrBus, type NdrBusHandle } from "./ndr-bus.js";
 import { ndrOnboardingAdapter } from "./onboarding.js";
 
 // Store active bus handles per account
 const activeBuses = new Map<string, NdrBusHandle>();
+
+const GROUP_ID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function isGroupId(input: string): boolean {
+  return GROUP_ID_REGEX.test(input);
+}
+
+type GroupPolicy = "open" | "allowlist" | "disabled";
+
+type GroupGateResult = {
+  allowed: boolean;
+  policy: GroupPolicy;
+  reason: "open" | "disabled" | "allowlist" | "group";
+};
+
+function resolveGroupPolicy(cfg: OpenClawConfig, account: ResolvedNdrAccount): GroupPolicy {
+  const defaults = (cfg.channels ?? {}) as Record<string, unknown>;
+  const defaultPolicy = (defaults.defaults as Record<string, unknown> | undefined)?.groupPolicy;
+  const policy = account.config.groupPolicy ?? (typeof defaultPolicy === "string" ? defaultPolicy : undefined) ?? "allowlist";
+  if (policy === "open" || policy === "disabled" || policy === "allowlist") return policy;
+  return "allowlist";
+}
+
+function resolveGroupAllowGroups(groupsConfig: ResolvedNdrAccount["config"]["groups"]): string[] {
+  if (Array.isArray(groupsConfig)) {
+    return groupsConfig.map((g) => String(g)).filter(Boolean);
+  }
+  if (groupsConfig && typeof groupsConfig === "object") {
+    return Object.entries(groupsConfig)
+      .filter(([, value]) => (value as { enabled?: boolean } | undefined)?.enabled !== false)
+      .map(([key]) => key);
+  }
+  return [];
+}
+
+function normalizeAllowFrom(entries: string[] | undefined, ownerPubkey: string | null): string[] {
+  const normalized: string[] = [];
+  for (const entry of entries ?? []) {
+    const trimmed = String(entry).trim();
+    if (!trimmed) continue;
+    if (trimmed === "*") {
+      normalized.push("*");
+      continue;
+    }
+    try {
+      normalized.push(normalizePubkey(trimmed));
+    } catch {
+      // Ignore invalid entries
+    }
+  }
+  if (normalized.length === 0 && ownerPubkey) {
+    normalized.push(ownerPubkey.toLowerCase());
+  }
+  return normalized;
+}
+
+export function isGroupMessageAllowed(params: {
+  cfg: OpenClawConfig;
+  account: ResolvedNdrAccount;
+  groupId: string;
+  senderPubkey: string;
+}): GroupGateResult {
+  const { cfg, account, groupId, senderPubkey } = params;
+  const policy = resolveGroupPolicy(cfg, account);
+  if (policy === "disabled") {
+    return { allowed: false, policy, reason: "disabled" };
+  }
+  if (policy === "open") {
+    return { allowed: true, policy, reason: "open" };
+  }
+
+  const allowFrom = normalizeAllowFrom(account.config.groupAllowFrom, account.ownerPubkey);
+  if (allowFrom.length === 0) {
+    return { allowed: false, policy, reason: "allowlist" };
+  }
+  const sender = senderPubkey.toLowerCase();
+  if (!allowFrom.includes("*") && !allowFrom.includes(sender)) {
+    return { allowed: false, policy, reason: "allowlist" };
+  }
+
+  const allowedGroups = resolveGroupAllowGroups(account.config.groups);
+  if (allowedGroups.length > 0 && !allowedGroups.includes(groupId)) {
+    return { allowed: false, policy, reason: "group" };
+  }
+
+  return { allowed: true, policy, reason: "allowlist" };
+}
 
 export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   id: "ndr",
@@ -36,7 +124,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
     quickstartAllowFrom: true,
   },
   capabilities: {
-    chatTypes: ["direct"], // DMs only
+    chatTypes: ["direct", "group"],
     media: true, // Supports nhash media via htree
   },
   reload: { configPrefixes: ["channels.ndr"] },
@@ -70,9 +158,9 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       looksLikeId: (input: string) => {
         const trimmed = input.trim();
         // Chat IDs are short hex strings
-        return /^[0-9a-fA-F]{8}$/.test(trimmed) || trimmed.startsWith("npub1");
+        return /^[0-9a-fA-F]{8}$/.test(trimmed) || isGroupId(trimmed) || trimmed.startsWith("npub1");
       },
-      hint: "<chat_id|npub>",
+      hint: "<chat_id|group_id|npub>",
     },
   },
 
@@ -92,7 +180,11 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         accountId: aid,
       });
       const message = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
-      await bus.sendMessage(to, message);
+      if (isGroupId(to)) {
+        await bus.sendGroupMessage(to, message);
+      } else {
+        await bus.sendMessage(to, message);
+      }
       return { channel: "ndr", to };
     },
     sendMedia: async ({ to, text, mediaUrl, accountId }: { to: string; text?: string; mediaUrl?: string; accountId?: string }) => {
@@ -128,7 +220,11 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       }
 
       const message = `${caption}${mediaLink}`;
-      await bus.sendMessage(to, message);
+      if (isGroupId(to)) {
+        await bus.sendGroupMessage(to, message);
+      } else {
+        await bus.sendMessage(to, message);
+      }
       return { channel: "ndr", to };
     },
   },
@@ -365,6 +461,113 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           });
           markDispatchIdle();
         },
+        onGroupMessage: async (groupId, messageId, senderPubkey, text, replyFn, media) => {
+          ctx.log?.debug(`[${account.accountId}] Group message from ${senderPubkey} in group ${groupId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
+
+          const cfg = runtime.config.loadConfig();
+          const allow = isGroupMessageAllowed({
+            cfg,
+            account,
+            groupId,
+            senderPubkey,
+          });
+
+          if (!allow.allowed) {
+            ctx.log?.info(`[${account.accountId}] Ignoring group message (${allow.reason}) from ${senderPubkey} in ${groupId}`);
+            return;
+          }
+
+          const route = runtime.channel.routing.resolveAgentRoute({
+            cfg,
+            channel: "ndr",
+            accountId: account.accountId,
+            peer: { kind: "group", id: groupId },
+          });
+
+          const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(cfg);
+          const body = runtime.channel.reply.formatInboundEnvelope({
+            channel: "NDR",
+            from: senderPubkey.slice(0, 16) + "...",
+            body: text,
+            chatType: "group",
+            sender: { name: senderPubkey.slice(0, 8), id: senderPubkey },
+            envelope: envelopeOptions,
+          });
+
+          const ctxPayload = runtime.channel.reply.finalizeInboundContext({
+            Body: body,
+            RawBody: text,
+            CommandBody: text,
+            From: `ndr:${senderPubkey}`,
+            To: `ndr:group:${groupId}`,
+            SessionKey: route.sessionKey,
+            AccountId: route.accountId,
+            ChatType: "group" as const,
+            ConversationLabel: `NDR group ${groupId}`,
+            SenderName: senderPubkey.slice(0, 8),
+            SenderId: senderPubkey,
+            Provider: "ndr" as const,
+            Surface: "ndr" as const,
+            MessageSid: `${groupId}-${messageId || Date.now()}`,
+            CommandAuthorized: true,
+            OriginatingChannel: "ndr" as const,
+            OriginatingTo: `ndr:group:${groupId}`,
+            MediaPath: media?.path,
+            MediaType: media?.mimeType ?? undefined,
+            MediaUrl: media?.url,
+          });
+
+          const storePath = runtime.channel.session.resolveStorePath(cfg.session?.store, {
+            agentId: route.agentId,
+          });
+          await runtime.channel.session.recordInboundSession({
+            storePath,
+            sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+            ctx: ctxPayload,
+            updateLastRoute: {
+              sessionKey: route.mainSessionKey,
+              channel: "ndr",
+              to: groupId,
+              accountId: route.accountId,
+            },
+          });
+
+          const prefixContext = createReplyPrefixContext({ cfg, agentId: route.agentId });
+
+          const typingCallbacks = createTypingCallbacks({
+            start: async () => {},
+            onStartError: () => {},
+          });
+
+          const { dispatcher, replyOptions, markDispatchIdle } = runtime.channel.reply.createReplyDispatcherWithTyping({
+            responsePrefix: prefixContext.responsePrefix,
+            responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
+            humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
+            onReplyStart: typingCallbacks.onReplyStart,
+            deliver: async (payload: { text?: string }) => {
+              const responseText = payload.text ?? "";
+              if (responseText) {
+                await replyFn(responseText);
+              }
+            },
+            onError: (err: unknown, info: { kind: string }) => {
+              ctx.log?.error(`[${account.accountId}] NDR group reply failed (${info.kind}): ${String(err)}`);
+            },
+          });
+
+          await runtime.channel.reply.dispatchReplyFromConfig({
+            ctx: ctxPayload,
+            cfg,
+            dispatcher,
+            replyOptions: {
+              ...replyOptions,
+              onModelSelected: (modelCtx: unknown) => {
+                prefixContext.onModelSelected(modelCtx);
+              },
+            },
+          });
+          markDispatchIdle();
+        },
         onError: (error, context) => {
           ctx.log?.error(`[${account.accountId}] NDR error (${context}): ${error.message}`);
         },
@@ -399,4 +602,3 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
 export function getActiveNdrBuses(): Map<string, NdrBusHandle> {
   return new Map(activeBuses);
 }
-

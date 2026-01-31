@@ -10,6 +10,7 @@ Compatible with [chat.iris.to](https://chat.iris.to).
 - **Double ratchet encryption** - Based on Signal's proven protocol
 - **Nostr transport** - Messages sent via Nostr relays
 - **Interactive onboarding** - `openclaw onboard` walks you through setup
+- **Group chats** - NDR group fan-out with shared-channel invites
 
 ## Prerequisites
 
@@ -92,6 +93,15 @@ The onboarding writes config to `~/.openclaw/openclaw.json`. You can also edit i
 
       // Optional: Custom data directory for ndr (default: ~/.openclaw/ndr-data)
       dataDir: "~/.openclaw/ndr-data",
+
+      // Optional: Group policy ("allowlist" | "open" | "disabled")
+      groupPolicy: "allowlist",
+
+      // Optional: Allowed senders in groups (npub/hex, "*" allows anyone)
+      groupAllowFrom: ["npub1...", "abcdef..."],
+
+      // Optional: Allowed group IDs (UUIDs). Can be an array or a map.
+      groups: ["11111111-1111-1111-1111-111111111111"]
     }
   }
 }
@@ -116,12 +126,29 @@ openclaw channels status --channel ndr
 ndr chat list
 ```
 
+### Groups (NDR)
+
+NDR groups are managed by the `ndr` CLI. This plugin listens for `group_message`
+events and can reply in groups when allowed by `groupPolicy`.
+
+```bash
+# Create a group (members are hex pubkeys)
+ndr group create --name "My Group" --members <hex_pubkey,hex_pubkey>
+
+# List groups (get group IDs)
+ndr group list
+
+# Send a group message
+ndr group send <group_id> "hello"
+```
+
 ## How it works
 
 1. **Listening** - Runs `ndr listen` to receive incoming messages
 2. **Receiving** - Decrypts messages using the double ratchet session
 3. **Sending** - Uses `ndr send` to encrypt and publish messages
 4. **Session management** - ndr handles key rotation automatically
+5. **Groups** - `ndr group` fan-out with shared-channel invites
 
 ## Security
 
@@ -149,3 +176,10 @@ Check that:
 1. You have an active chat session with the recipient
 2. The relay is reachable
 3. ndr CLI is working: `ndr chat list`
+
+### Group messages not showing up
+
+Check that:
+1. `groupPolicy` allows the sender (`open` or `allowlist` with `groupAllowFrom`)
+2. The group ID is included in `groups` if you configured a group allowlist
+3. Your NDR client is in the group and has accepted it
