@@ -40,9 +40,9 @@ type GroupGateResult = {
 function resolveGroupPolicy(cfg: OpenClawConfig, account: ResolvedNdrAccount): GroupPolicy {
   const defaults = (cfg.channels ?? {}) as Record<string, unknown>;
   const defaultPolicy = (defaults.defaults as Record<string, unknown> | undefined)?.groupPolicy;
-  const policy = account.config.groupPolicy ?? (typeof defaultPolicy === "string" ? defaultPolicy : undefined) ?? "allowlist";
+  const policy = account.config.groupPolicy ?? (typeof defaultPolicy === "string" ? defaultPolicy : undefined) ?? "open";
   if (policy === "open" || policy === "disabled" || policy === "allowlist") return policy;
-  return "allowlist";
+  return "open";
 }
 
 function resolveGroupAllowGroups(groupsConfig: ResolvedNdrAccount["config"]["groups"]): string[] {

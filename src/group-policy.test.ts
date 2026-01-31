@@ -19,6 +19,19 @@ function makeAccount(overrides: Partial<ResolvedNdrAccount> = {}): ResolvedNdrAc
 }
 
 describe("isGroupMessageAllowed", () => {
+  it("defaults to open when groupPolicy is not set", () => {
+    const cfg: OpenClawConfig = {};
+    const account = makeAccount();
+    const result = isGroupMessageAllowed({
+      cfg,
+      account,
+      groupId: "00000000-0000-0000-0000-000000000000",
+      senderPubkey: "b".repeat(64),
+    });
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("open");
+  });
+
   it("blocks when groupPolicy is disabled", () => {
     const cfg: OpenClawConfig = { channels: { defaults: { groupPolicy: "disabled" } } };
     const account = makeAccount();

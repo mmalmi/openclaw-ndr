@@ -94,8 +94,8 @@ The onboarding writes config to `~/.openclaw/openclaw.json`. You can also edit i
       // Optional: Custom data directory for ndr (default: ~/.openclaw/ndr-data)
       dataDir: "~/.openclaw/ndr-data",
 
-      // Optional: Group policy ("allowlist" | "open" | "disabled")
-      groupPolicy: "allowlist",
+      // Optional: Group policy ("open" | "allowlist" | "disabled")
+      groupPolicy: "open",
 
       // Optional: Allowed senders in groups (npub/hex, "*" allows anyone)
       groupAllowFrom: ["npub1...", "abcdef..."],
@@ -129,7 +129,7 @@ ndr chat list
 ### Groups (NDR)
 
 NDR groups are managed by the `ndr` CLI. This plugin listens for `group_message`
-events and can reply in groups when allowed by `groupPolicy`.
+events and can reply in groups when allowed by `groupPolicy` (default: `open`).
 
 ```bash
 # Create a group (members are hex pubkeys)
@@ -180,6 +180,6 @@ Check that:
 ### Group messages not showing up
 
 Check that:
-1. `groupPolicy` allows the sender (`open` or `allowlist` with `groupAllowFrom`)
+1. `groupPolicy` is `open` (default) or `allowlist` with a matching `groupAllowFrom`
 2. The group ID is included in `groups` if you configured a group allowlist
 3. Your NDR client is in the group and has accepted it
