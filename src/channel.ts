@@ -29,6 +29,35 @@ function isGroupId(input: string): boolean {
   return GROUP_ID_REGEX.test(input);
 }
 
+const seenGroupInvites = new Map<string, Set<string>>();
+
+function markGroupInviteSeen(accountId: string, groupId: string): boolean {
+  let seen = seenGroupInvites.get(accountId);
+  if (!seen) {
+    seen = new Set();
+    seenGroupInvites.set(accountId, seen);
+  }
+  if (seen.has(groupId)) return true;
+  seen.add(groupId);
+  return false;
+}
+
+function normalizePubkeySafe(input?: string | null): string | null {
+  if (!input) return null;
+  try {
+    return normalizePubkey(input);
+  } catch {
+    return null;
+  }
+}
+
+export function shouldAutoAcceptGroupInvite(ownerPubkey: string | null, senderPubkey?: string): boolean {
+  const owner = normalizePubkeySafe(ownerPubkey);
+  const sender = normalizePubkeySafe(senderPubkey);
+  if (!owner || !sender) return false;
+  return owner === sender;
+}
+
 type GroupPolicy = "open" | "allowlist" | "disabled";
 
 type GroupGateResult = {
@@ -567,6 +596,54 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             },
           });
           markDispatchIdle();
+        },
+        onGroupMetadata: async (groupId, action, senderPubkey) => {
+          if (action !== "created") return;
+          if (markGroupInviteSeen(account.accountId, groupId)) return;
+
+          const ownerPubkey = account.ownerPubkey;
+          const senderLabel = senderPubkey ? `${senderPubkey.slice(0, 16)}...` : "unknown sender";
+
+          if (shouldAutoAcceptGroupInvite(ownerPubkey, senderPubkey)) {
+            try {
+              await bus.acceptGroup(groupId);
+              ctx.log?.info(`[${account.accountId}] Auto-accepted group invite ${groupId} from owner`);
+            } catch (err) {
+              ctx.log?.warn(
+                `[${account.accountId}] Failed to auto-accept group invite ${groupId} from owner: ${String(err)}`,
+              );
+            }
+            return;
+          }
+
+          if (!ownerPubkey) {
+            ctx.log?.info(
+              `[${account.accountId}] Group invite ${groupId} from ${senderLabel} (no owner set). Run: ndr group accept ${groupId}`,
+            );
+            return;
+          }
+
+          try {
+            const chats = await bus.listChats();
+            const ownerHex = normalizePubkeySafe(ownerPubkey);
+            const ownerChat = ownerHex
+              ? chats.find((chat) => normalizePubkeySafe(chat.their_pubkey) === ownerHex)
+              : undefined;
+
+            if (!ownerChat) {
+              ctx.log?.warn(
+                `[${account.accountId}] Group invite ${groupId} from ${senderLabel} (no chat with owner). Run: ndr group accept ${groupId}`,
+              );
+              return;
+            }
+
+            const notice = `Group invite ${groupId} from ${senderLabel}. Run: ndr group accept ${groupId} (or ndr group delete ${groupId}).`;
+            await bus.sendMessage(ownerChat.id, notice);
+          } catch (err) {
+            ctx.log?.warn(
+              `[${account.accountId}] Failed to notify owner about group invite ${groupId}: ${String(err)}`,
+            );
+          }
         },
         onError: (error, context) => {
           ctx.log?.error(`[${account.accountId}] NDR error (${context}): ${error.message}`);

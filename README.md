@@ -130,6 +130,8 @@ ndr chat list
 
 NDR groups are managed by the `ndr` CLI. This plugin listens for `group_message`
 events and can reply in groups when allowed by `groupPolicy` (default: `open`).
+Group invites are not auto-accepted; if the inviter matches `ownerPubkey`, the
+plugin auto-accepts, otherwise it notifies the owner to decide.
 
 ```bash
 # Create a group (members are hex pubkeys)

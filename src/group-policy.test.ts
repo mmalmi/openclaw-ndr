@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { ResolvedNdrAccount } from "./types.js";
-import { isGroupMessageAllowed } from "./channel.js";
+import { isGroupMessageAllowed, shouldAutoAcceptGroupInvite } from "./channel.js";
 
 function makeAccount(overrides: Partial<ResolvedNdrAccount> = {}): ResolvedNdrAccount {
   return {
@@ -93,5 +93,28 @@ describe("isGroupMessageAllowed", () => {
     });
     expect(blocked.allowed).toBe(false);
     expect(blocked.reason).toBe("group");
+  });
+});
+
+describe("shouldAutoAcceptGroupInvite", () => {
+  it("returns true when owner matches sender", () => {
+    const owner = "a".repeat(64);
+    expect(shouldAutoAcceptGroupInvite(owner, owner)).toBe(true);
+  });
+
+  it("returns false when owner is missing", () => {
+    expect(shouldAutoAcceptGroupInvite(null, "b".repeat(64))).toBe(false);
+  });
+
+  it("returns false when sender is missing or invalid", () => {
+    const owner = "c".repeat(64);
+    expect(shouldAutoAcceptGroupInvite(owner, undefined)).toBe(false);
+    expect(shouldAutoAcceptGroupInvite(owner, "not-a-pubkey")).toBe(false);
+  });
+
+  it("returns false when sender does not match owner", () => {
+    const owner = "d".repeat(64);
+    const sender = "e".repeat(64);
+    expect(shouldAutoAcceptGroupInvite(owner, sender)).toBe(false);
   });
 });

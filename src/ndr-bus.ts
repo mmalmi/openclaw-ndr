@@ -28,6 +28,7 @@ export interface NdrBusOptions {
 export interface NdrBusHandle {
   sendMessage: (chatId: string, text: string) => Promise<void>;
   sendGroupMessage: (groupId: string, text: string) => Promise<void>;
+  acceptGroup: (groupId: string) => Promise<void>;
   react: (chatId: string, messageId: string, emoji: string) => Promise<void>;
   sendReceipt: (chatId: string, receiptType: 'delivered' | 'seen', messageIds: string[]) => Promise<void>;
   sendTyping: (chatId: string) => Promise<void>;
@@ -404,6 +405,12 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
       const result = await runNdrCommand(ndrPath, [...baseArgs, "group", "send", groupId, text], ndrEnv);
       if (result.status !== "ok") {
         throw new Error(result.error || "Failed to send group message");
+      }
+    },
+    acceptGroup: async (groupId: string) => {
+      const result = await runNdrCommand(ndrPath, [...baseArgs, "group", "accept", groupId], ndrEnv);
+      if (result.status !== "ok") {
+        throw new Error(result.error || "Failed to accept group invite");
       }
     },
 
