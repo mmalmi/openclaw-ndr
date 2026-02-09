@@ -1,0 +1,22 @@
+services:
+  alice:
+    build: .
+    environment:
+      # Override if needed: RELAYS="wss://relay.example,wss://relay2.example"
+      RELAYS: ${RELAYS:-wss://temp.iris.to,wss://relay.snort.social,wss://relay.primal.net,wss://relay.damus.io,wss://offchain.pub}
+      TIMEOUT_MS: ${TIMEOUT_MS:-180000}
+    volumes:
+      - ./shared:/shared
+    command: ["node", "/e2e/alice.mjs"]
+
+  bob:
+    build: .
+    depends_on:
+      - alice
+    environment:
+      RELAYS: ${RELAYS:-wss://temp.iris.to,wss://relay.snort.social,wss://relay.primal.net,wss://relay.damus.io,wss://offchain.pub}
+      TIMEOUT_MS: ${TIMEOUT_MS:-180000}
+    volumes:
+      - ./shared:/shared
+    command: ["node", "/e2e/bob.mjs"]
+
