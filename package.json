@@ -1,5 +1,5 @@
 {
-  "name": "@openclaw/ndr",
+  "name": "openclaw-ndr",
   "version": "0.0.3",
   "type": "module",
   "description": "OpenClaw channel plugin for nostr-double-ratchet (forward-secure E2E encryption)",
@@ -18,19 +18,15 @@
   },
   "license": "MIT",
   "packageManager": "pnpm@10.28.2",
-  "files": [
-    "dist/",
-    "src/",
-    "!src/**/*.test.ts",
-    "index.ts",
-    "openclaw.plugin.json",
-    "README.md"
-  ],
+  "files": ["dist/", "src/", "!src/**/*.test.ts", "index.ts", "openclaw.plugin.json", "README.md"],
   "openclaw": {
     "id": "ndr",
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "install": {
+      "npmSpec": "openclaw-ndr"
+    }
   },
   "scripts": {
     "build": "tsc",
