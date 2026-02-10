@@ -125,6 +125,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
     const timeoutMs = 120_000;
     const startedAt = Date.now();
     const beforeChatIds = new Set<string>();
+    let baselineOk = false;
     let lastError: string | null = null;
     let chatId: string | null = null;
     let ownerPubkey: string | null = null;
@@ -150,8 +151,10 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
         for (const entry of await bus.listChats()) {
           beforeChatIds.add(entry.id);
         }
+        baselineOk = true;
       } catch {
-        // ignore; just means we can't diff
+        // If we can't list chats, do not attempt diff-based pairing (could mis-pair).
+        baselineOk = false;
       }
 
       const invite = await bus.createInvite();
@@ -190,16 +193,18 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
         if (chatId && ownerPubkey) {
           break;
         }
-        try {
-          const chats = await bus.listChats();
-          const newlyCreated = chats.find((c) => !beforeChatIds.has(c.id));
-          if (newlyCreated) {
-            chatId = newlyCreated.id;
-            ownerPubkey = newlyCreated.their_pubkey;
-            break;
+        if (baselineOk) {
+          try {
+            const chats = await bus.listChats();
+            const newlyCreated = chats.find((c) => !beforeChatIds.has(c.id));
+            if (newlyCreated) {
+              chatId = newlyCreated.id;
+              ownerPubkey = newlyCreated.their_pubkey;
+              break;
+            }
+          } catch {
+            // ignore polling failures
           }
-        } catch {
-          // ignore polling failures
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
