@@ -3,14 +3,29 @@
   "version": "0.0.3",
   "type": "module",
   "description": "OpenClaw channel plugin for nostr-double-ratchet (forward-secure E2E encryption)",
-  "keywords": ["openclaw", "nostr", "double-ratchet", "ndr", "e2e", "encryption", "chat"],
+  "keywords": [
+    "openclaw",
+    "nostr",
+    "double-ratchet",
+    "ndr",
+    "e2e",
+    "encryption",
+    "chat"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/mmalmi/openclaw-ndr"
   },
   "license": "MIT",
   "packageManager": "pnpm@10.28.2",
-  "files": ["dist/", "src/", "!src/**/*.test.ts", "index.ts", "openclaw.plugin.json", "README.md"],
+  "files": [
+    "dist/",
+    "src/",
+    "!src/**/*.test.ts",
+    "index.ts",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
   "openclaw": {
     "id": "ndr",
     "extensions": [
@@ -23,11 +38,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "qrcode-terminal": "^0.12.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "vitest": "^3.0.0",
-    "typescript": "^5.7.0"
+    "@types/qrcode-terminal": "^0.12.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
   },
   "peerDependencies": {
     "openclaw": "*"

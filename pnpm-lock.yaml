@@ -11,10 +11,16 @@ importers:
       openclaw:
         specifier: '*'
         version: 2026.1.29(@types/express@5.0.6)(devtools-protocol@0.0.1575685)(typescript@5.9.3)
+      qrcode-terminal:
+        specifier: ^0.12.0
+        version: 0.12.0
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@types/qrcode-terminal':
+        specifier: ^0.12.2
+        version: 0.12.2
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -1523,6 +1529,9 @@ packages:
 
   '@types/node@25.1.0':
     resolution: {integrity: sha512-t7frlewr6+cbx+9Ohpl0NOTKXZNV9xHRmNOvql47BFJKcEG1CxtxlPEEe+gR9uhVWM4DwhnvTF110mIL4yP9RA==}
+
+  '@types/qrcode-terminal@0.12.2':
+    resolution: {integrity: sha512-v+RcIEJ+Uhd6ygSQ0u5YYY7ZM+la7GgPbs0V/7l/kFs2uO4S8BcIUEMoP7za4DNIqNnUD5npf0A/7kBhrCKG5Q==}
 
   '@types/qs@6.14.0':
     resolution: {integrity: sha512-eOunJqu0K1923aExK6y8p6fsihYEn/BYuQ4g0CxAAgFc4b/ZLN4CrsRZ55srTdqoiLzU2B2evC+apEIxprEzkQ==}
@@ -5215,6 +5224,8 @@ snapshots:
   '@types/node@25.1.0':
     dependencies:
       undici-types: 7.16.0
+
+  '@types/qrcode-terminal@0.12.2': {}
 
   '@types/qs@6.14.0': {}
 

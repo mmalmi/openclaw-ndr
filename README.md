@@ -51,16 +51,16 @@ openclaw onboard
 Select the NDR channel when prompted. The onboarding will:
 
 1. Check if `ndr` CLI is installed
-2. Ask you to paste a chat link (npub) or invite URL from [chat.iris.to](https://chat.iris.to)
-3. Accept the invite and send a hello message
-4. Configure your owner pubkey (so only you can control the agent)
+2. Generate a private pairing link (and QR code)
+3. Wait for you to accept it in [chat.iris.to](https://chat.iris.to)
+4. Send a hello message and configure your owner pubkey (so only you can control the agent)
 
-### Getting a chat link
+### Accepting The Pairing Link
 
-1. Go to [chat.iris.to](https://chat.iris.to)
-2. Click the **+** (New Chat) button
-3. Click **Copy your chat link**
-4. Paste it into the onboarding prompt
+1. Run `openclaw onboard` and select NDR
+2. Copy the pairing URL printed by the onboarding (or scan the QR)
+3. Open it in your browser (it will take you to chat.iris.to and start the chat)
+4. After you accept, the bot will send a hello message and lock the agent to your pubkey
 
 ### Start the gateway
 

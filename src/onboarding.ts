@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 
-import { deriveOwnerPubkeyHex, parseNdrChatJoinOutput } from "./onboarding-utils.js";
+import { startNdrBus } from "./ndr-bus.js";
 import { listNdrAccountIds, resolveNdrAccount, resolveDefaultNdrAccountId } from "./types.js";
 
 const channel = "ndr" as const;
@@ -90,141 +90,173 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       // hashtree-cli not found
     }
 
-    if (!ndrAvailable || !hashtreeAvailable) {
-      const missing: string[] = [];
-      if (!ndrAvailable) missing.push("ndr (required for messaging)");
-      if (!hashtreeAvailable) missing.push("hashtree-cli (required for media attachments)");
+    if (!ndrAvailable) {
       await prompter.note(
         [
-          `Missing: ${missing.join(", ")}`,
+          "Missing: ndr (required for pairing and messaging)",
           "",
           "Install: cargo install ndr hashtree-cli",
           "",
-          "You can configure now and install later.",
+          "Then re-run: openclaw onboard",
+        ].join("\n"),
+        "Blocked",
+      );
+      return { cfg };
+    }
+
+    if (!hashtreeAvailable) {
+      await prompter.note(
+        [
+          "Missing: hashtree-cli (required for media attachments)",
+          "",
+          "Install: cargo install hashtree-cli",
+          "",
+          "You can continue without it (text-only).",
         ].join("\n"),
         "Warning",
       );
     }
 
-    // Ask for invite URL from chat.iris.to
-    await prompter.note(
-      [
-        "To connect your bot to your account:",
-        "",
-        "1. Go to chat.iris.to",
-        "2. Click 'New Chat' (+ button)",
-        "3. Click 'Copy your chat link' (npub link) or copy an invite URL",
-        "4. Paste it below",
-        "",
-        "The bot will join and send a hello message (when ndr CLI is installed).",
-      ].join("\n"),
-      "Chat Invite",
-    );
+    const defaultAccountId = resolveDefaultNdrAccountId(cfg);
+    const account = resolveNdrAccount({ cfg, accountId: defaultAccountId });
 
-    const joinInput = await prompter.text({
-      message: "Paste your chat link (npub) or invite URL",
-      placeholder: "https://chat.iris.to/#npub1... or https://chat.iris.to/#%7B...%7D",
-      validate: (value) => {
-        if (!value?.trim()) return "Required";
-        const owner = deriveOwnerPubkeyHex(value);
-        if (!owner) {
-          return "Invalid link. Expected an Iris chat link (npub1...) or an NDR invite URL.";
-        }
-        return undefined;
+    // Pairing flow: bot generates a private invite URL; user opens it in chat.iris.to.
+    // We'll wait for the invite to be accepted, then lock the agent to that pubkey.
+    const timeoutMs = 120_000;
+    const startedAt = Date.now();
+    const beforeChatIds = new Set<string>();
+    let lastError: string | null = null;
+    let chatId: string | null = null;
+    let ownerPubkey: string | null = null;
+    let sendError: string | null = null;
+
+    const bus = await startNdrBus({
+      accountId: account.accountId,
+      relays: account.relays,
+      ndrPath: account.ndrPath,
+      dataDir: account.dataDir,
+      onMessage: async () => {},
+      onNewSession: async (newChatId, theirPubkey) => {
+        chatId = newChatId;
+        ownerPubkey = theirPubkey;
+      },
+      onError: (err, context) => {
+        lastError = `${context}: ${err instanceof Error ? err.message : String(err)}`;
       },
     });
 
-    let ownerPubkey = deriveOwnerPubkeyHex(joinInput);
-    if (!ownerPubkey) {
-      // This should be prevented by validation, but keep it safe.
-      await prompter.note("Failed to parse link (owner pubkey missing).", "Error");
-      return { cfg };
-    }
-
-    // Try to accept the invite and send hello
-    let chatId: string | null = null;
-    let joinError: string | null = null;
-    let sendError: string | null = null;
-
-    if (ndrAvailable) {
-      const { spawnSync } = await import("child_process");
-      const os = await import("os");
-      const path = await import("path");
-
-      // Use ~/.openclaw/ndr-data to match channel plugin's default dataDir
-      const ndrDataDir = path.join(os.homedir(), ".openclaw", "ndr-data");
-
+    try {
       try {
-        const res = spawnSync("ndr", ["--data-dir", ndrDataDir, "--json", "chat", "join", joinInput.trim()], {
-          encoding: "utf-8",
-          timeout: 60000,
+        for (const entry of await bus.listChats()) {
+          beforeChatIds.add(entry.id);
+        }
+      } catch {
+        // ignore; just means we can't diff
+      }
+
+      const invite = await bus.createInvite();
+
+      let qr = "";
+      try {
+        const mod = await import("qrcode-terminal");
+        const qrcode: {
+          generate: (
+            input: string,
+            opts: { small?: boolean },
+            cb: (code: string) => void,
+          ) => void;
+        } = (mod as unknown as { default?: unknown }).default
+          ? ((mod as unknown as { default: unknown }).default as typeof qrcode)
+          : (mod as unknown as typeof qrcode);
+        qr = await new Promise<string>((resolve) => {
+          qrcode.generate(invite.inviteUrl, { small: true }, (code) => resolve(code));
         });
-        if (res.status !== 0) {
-          joinError = (res.stderr || res.stdout || "").trim() || `ndr chat join failed (${res.status ?? "unknown"})`;
-        } else {
-          const parsed = parseNdrChatJoinOutput(res.stdout || "");
-          chatId = parsed.chatId;
-          // Use the joined peer pubkey when available (avoids fragile URL parsing).
-          if (parsed.theirPubkey) {
-            ownerPubkey = parsed.theirPubkey;
-          }
-          if (!chatId) {
-            joinError = "Failed to parse chat ID from ndr output";
-          }
-        }
-      } catch (err) {
-        joinError = err instanceof Error ? err.message : String(err);
+      } catch {
+        // QR optional
       }
 
-      // Send hello message if we got a chat ID
-      if (chatId) {
+      const lines = [
+        "Open this one-time pairing link in chat.iris.to (or scan the QR):",
+        "",
+        invite.inviteUrl,
+      ];
+      if (qr.trim()) {
+        lines.push("", qr.trimEnd());
+      }
+      lines.push("", `Waiting up to ${Math.round(timeoutMs / 1000)}s for you to accept…`);
+      await prompter.note(lines.join("\n"), "Pairing");
+
+      while (Date.now() - startedAt < timeoutMs) {
+        if (chatId && ownerPubkey) {
+          break;
+        }
         try {
-          const res = spawnSync("ndr", ["--data-dir", ndrDataDir, "--json", "send", chatId, "Hello! I'm your openclaw agent."], {
-            encoding: "utf-8",
-            timeout: 30000,
-          });
-          if (res.status !== 0) {
-            sendError = (res.stderr || res.stdout || "").trim() || `ndr send failed (${res.status ?? "unknown"})`;
+          const chats = await bus.listChats();
+          const newlyCreated = chats.find((c) => !beforeChatIds.has(c.id));
+          if (newlyCreated) {
+            chatId = newlyCreated.id;
+            ownerPubkey = newlyCreated.their_pubkey;
+            break;
           }
-        } catch (err) {
-          sendError = err instanceof Error ? err.message : String(err);
+        } catch {
+          // ignore polling failures
         }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-    }
 
-    const next: OpenClawConfig = {
-      ...cfg,
-      channels: {
-        ...cfg.channels,
-        ndr: {
-          ...cfg.channels?.ndr,
-          enabled: true,
-          ownerPubkey,
+      if (!chatId || !ownerPubkey) {
+        const detail = lastError ? `Last error: ${lastError}` : "No session detected.";
+        await prompter.note(
+          [
+            `Timed out waiting for pairing (${Math.round(timeoutMs / 1000)}s).`,
+            detail,
+            "",
+            "You can try again: openclaw onboard",
+          ].join("\n"),
+          "Pairing Failed",
+        );
+        return { cfg };
+      }
+
+      // Send hello message once paired.
+      try {
+        await bus.sendMessage(chatId, "Hello! I'm your openclaw agent.");
+      } catch (err) {
+        sendError = err instanceof Error ? err.message : String(err);
+      }
+
+      const next: OpenClawConfig = {
+        ...cfg,
+        channels: {
+          ...cfg.channels,
+          ndr: {
+            ...cfg.channels?.ndr,
+            enabled: true,
+            ownerPubkey,
+          },
         },
-      },
-    };
+      };
 
-    const successMsg: string[] = ["NDR channel configured!", "", `Owner: ${ownerPubkey.slice(0, 16)}...`];
-
-    if (chatId) {
-      successMsg.push("", `Chat established: ${chatId}`);
+      const successMsg: string[] = [
+        "NDR channel configured!",
+        "",
+        `Owner: ${ownerPubkey.slice(0, 16)}...`,
+        `Chat established: ${chatId}`,
+      ];
       if (sendError) {
         successMsg.push("", `Warning: Failed to send hello message: ${sendError.slice(0, 100)}`);
       } else {
         successMsg.push("", "Hello message sent! Check chat.iris.to");
       }
-    } else if (joinError) {
-      successMsg.push("", `Warning: Failed to join chat: ${joinError.slice(0, 100)}`);
-      successMsg.push("", "Join manually:", `  ndr chat join "${joinInput.trim()}"`);
-    } else if (!ndrAvailable) {
-      successMsg.push("", "Install ndr CLI and join manually:", `  ndr chat join "${joinInput.trim()}"`);
+      successMsg.push("", "Start the gateway: openclaw gateway run");
+
+      await prompter.note(successMsg.join("\n"), "Setup Complete");
+
+      return { cfg: next };
+    } finally {
+      bus.close();
     }
 
-    successMsg.push("", "Start the gateway: openclaw gateway run");
-
-    await prompter.note(successMsg.join("\n"), "Setup Complete");
-
-    return { cfg: next };
   },
 
   disable: (cfg) => ({
