@@ -1,5 +1,6 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 
+import { deriveOwnerPubkeyHex, parseNdrChatJoinOutput } from "./onboarding-utils.js";
 import { listNdrAccountIds, resolveNdrAccount, resolveDefaultNdrAccountId } from "./types.js";
 
 const channel = "ndr" as const;
@@ -30,29 +31,6 @@ type ChannelOnboardingAdapter = {
   }) => Promise<{ cfg: OpenClawConfig; accountId?: string }>;
   disable?: (cfg: OpenClawConfig) => OpenClawConfig;
 };
-
-/**
- * Parse an NDR invite URL to extract the inviter's hex pubkey.
- * Invite URL format: https://iris.to#{"inviter":"<hex>","ephemeralKey":"...","sharedSecret":"..."}
- */
-function parseInviteUrl(url: string): { inviter: string } | null {
-  try {
-    const trimmed = url.trim();
-    // Handle both full URL and just the fragment
-    let fragment = trimmed;
-    if (trimmed.includes("#")) {
-      fragment = trimmed.split("#")[1] ?? "";
-    }
-    const decoded = decodeURIComponent(fragment);
-    const data = JSON.parse(decoded) as { inviter?: string };
-    if (data.inviter && /^[0-9a-fA-F]{64}$/.test(data.inviter)) {
-      return { inviter: data.inviter };
-    }
-  } catch {
-    // Invalid URL format
-  }
-  return null;
-}
 
 export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
   channel,
@@ -135,32 +113,33 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
         "",
         "1. Go to chat.iris.to",
         "2. Click 'New Chat' (+ button)",
-        "3. Click 'Copy your chat link'",
-        "4. Paste the invite URL below",
+        "3. Click 'Copy your chat link' (npub link) or copy an invite URL",
+        "4. Paste it below",
         "",
-        "The bot will accept your invite and send a hello message.",
+        "The bot will join and send a hello message (when ndr CLI is installed).",
       ].join("\n"),
       "Chat Invite",
     );
 
-    const inviteUrl = await prompter.text({
-      message: "Paste your chat invite URL from chat.iris.to",
-      placeholder: "https://chat.iris.to/#...",
+    const joinInput = await prompter.text({
+      message: "Paste your chat link (npub) or invite URL",
+      placeholder: "https://chat.iris.to/#npub1... or https://chat.iris.to/#%7B...%7D",
       validate: (value) => {
         if (!value?.trim()) return "Required";
-        const parsed = parseInviteUrl(value);
-        if (!parsed) return "Invalid invite URL. Should be from chat.iris.to";
+        const owner = deriveOwnerPubkeyHex(value);
+        if (!owner) {
+          return "Invalid link. Expected an Iris chat link (npub1...) or an NDR invite URL.";
+        }
         return undefined;
       },
     });
 
-    const parsed = parseInviteUrl(inviteUrl);
-    if (!parsed) {
-      await prompter.note("Failed to parse invite URL.", "Error");
+    let ownerPubkey = deriveOwnerPubkeyHex(joinInput);
+    if (!ownerPubkey) {
+      // This should be prevented by validation, but keep it safe.
+      await prompter.note("Failed to parse link (owner pubkey missing).", "Error");
       return { cfg };
     }
-
-    const ownerPubkey = parsed.inviter;
 
     // Try to accept the invite and send hello
     let chatId: string | null = null;
@@ -168,33 +147,30 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
     let sendError: string | null = null;
 
     if (ndrAvailable) {
-      const { execSync } = await import("child_process");
+      const { spawnSync } = await import("child_process");
       const os = await import("os");
       const path = await import("path");
 
       // Use ~/.openclaw/ndr-data to match channel plugin's default dataDir
       const ndrDataDir = path.join(os.homedir(), ".openclaw", "ndr-data");
-      const ndrCmd = `ndr --data-dir "${ndrDataDir}" --json`;
 
-      // Accept the invite
       try {
-        const joinOutput = execSync(`${ndrCmd} chat join "${inviteUrl.trim()}"`, {
+        const res = spawnSync("ndr", ["--data-dir", ndrDataDir, "--json", "chat", "join", joinInput.trim()], {
           encoding: "utf-8",
           timeout: 60000,
         });
-        // Parse JSON output for chat ID
-        // Format: { "status": "ok", "command": "chat.join", "data": { "id": "..." } }
-        try {
-          const joinResult = JSON.parse(joinOutput) as {
-            data?: { id?: string; chat_id?: string };
-            id?: string;
-            chat_id?: string;
-          };
-          chatId = joinResult.data?.id ?? joinResult.data?.chat_id ?? joinResult.id ?? joinResult.chat_id ?? null;
-        } catch {
-          // Fallback: parse from text output
-          const chatMatch = joinOutput.match(/chat[:\s_]+([0-9a-fA-F]{8})/i);
-          if (chatMatch) chatId = chatMatch[1];
+        if (res.status !== 0) {
+          joinError = (res.stderr || res.stdout || "").trim() || `ndr chat join failed (${res.status ?? "unknown"})`;
+        } else {
+          const parsed = parseNdrChatJoinOutput(res.stdout || "");
+          chatId = parsed.chatId;
+          // Use the joined peer pubkey when available (avoids fragile URL parsing).
+          if (parsed.theirPubkey) {
+            ownerPubkey = parsed.theirPubkey;
+          }
+          if (!chatId) {
+            joinError = "Failed to parse chat ID from ndr output";
+          }
         }
       } catch (err) {
         joinError = err instanceof Error ? err.message : String(err);
@@ -203,10 +179,13 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       // Send hello message if we got a chat ID
       if (chatId) {
         try {
-          execSync(`${ndrCmd} send "${chatId}" "Hello! I'm your openclaw agent."`, {
+          const res = spawnSync("ndr", ["--data-dir", ndrDataDir, "--json", "send", chatId, "Hello! I'm your openclaw agent."], {
             encoding: "utf-8",
             timeout: 30000,
           });
+          if (res.status !== 0) {
+            sendError = (res.stderr || res.stdout || "").trim() || `ndr send failed (${res.status ?? "unknown"})`;
+          }
         } catch (err) {
           sendError = err instanceof Error ? err.message : String(err);
         }
@@ -236,9 +215,9 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       }
     } else if (joinError) {
       successMsg.push("", `Warning: Failed to join chat: ${joinError.slice(0, 100)}`);
-      successMsg.push("", "Join manually:", `  ndr chat join "${inviteUrl.trim()}"`);
+      successMsg.push("", "Join manually:", `  ndr chat join "${joinInput.trim()}"`);
     } else if (!ndrAvailable) {
-      successMsg.push("", "Install ndr CLI and join manually:", `  ndr chat join "${inviteUrl.trim()}"`);
+      successMsg.push("", "Install ndr CLI and join manually:", `  ndr chat join "${joinInput.trim()}"`);
     }
 
     successMsg.push("", "Start the gateway: openclaw gateway run");

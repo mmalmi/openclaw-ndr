@@ -51,11 +51,11 @@ openclaw onboard
 Select the NDR channel when prompted. The onboarding will:
 
 1. Check if `ndr` CLI is installed
-2. Ask you to paste a chat invite URL from [chat.iris.to](https://chat.iris.to)
+2. Ask you to paste a chat link (npub) or invite URL from [chat.iris.to](https://chat.iris.to)
 3. Accept the invite and send a hello message
 4. Configure your owner pubkey (so only you can control the agent)
 
-### Getting a chat invite URL
+### Getting a chat link
 
 1. Go to [chat.iris.to](https://chat.iris.to)
 2. Click the **+** (New Chat) button
