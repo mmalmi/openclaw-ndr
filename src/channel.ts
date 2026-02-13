@@ -59,15 +59,9 @@ export function shouldAutoAcceptGroupInvite(ownerPubkey: string | null, senderPu
 }
 
 export function isDirectMessageFromOwner(params: {
-  chatId: string;
   identityPubkey: string;
   ownerPubkey: string | null;
-  ownerChatId?: string | null;
 }): boolean {
-  const ownerChatId = params.ownerChatId?.trim();
-  if (ownerChatId && params.chatId === ownerChatId) {
-    return true;
-  }
   const owner = normalizePubkeySafe(params.ownerPubkey);
   const sender = normalizePubkeySafe(params.identityPubkey);
   if (!owner || !sender) return false;
@@ -382,13 +376,11 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           }
 
           const isOwner = isDirectMessageFromOwner({
-            chatId,
             identityPubkey,
             ownerPubkey: account.ownerPubkey,
-            ownerChatId: account.config.ownerChatId,
           });
 
-          if (!isOwner && (account.ownerPubkey || account.config.ownerChatId)) {
+          if (!isOwner && account.ownerPubkey) {
             // Non-owner message - log and ignore
             ctx.log?.info(
               `[${account.accountId}] Ignoring message from non-owner ${identityPubkey} in chat ${chatId}`,

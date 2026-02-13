@@ -124,42 +124,28 @@ describe("shouldAutoAcceptGroupInvite", () => {
 });
 
 describe("isDirectMessageFromOwner", () => {
-  it("allows message when chat id matches ownerChatId", () => {
+  it("allows message when owner pubkey matches identity pubkey", () => {
+    const owner = "a".repeat(64);
     const allowed = isDirectMessageFromOwner({
-      chatId: "chat-123",
-      identityPubkey: "b".repeat(64),
-      ownerPubkey: "a".repeat(64),
-      ownerChatId: "chat-123",
-    });
-    expect(allowed).toBe(true);
-  });
-
-  it("trims ownerChatId before comparing", () => {
-    const allowed = isDirectMessageFromOwner({
-      chatId: "chat-trim",
-      identityPubkey: "b".repeat(64),
-      ownerPubkey: "a".repeat(64),
-      ownerChatId: "  chat-trim  ",
-    });
-    expect(allowed).toBe(true);
-  });
-
-  it("falls back to owner pubkey comparison when ownerChatId is absent", () => {
-    const owner = "c".repeat(64);
-    const allowed = isDirectMessageFromOwner({
-      chatId: "other-chat",
       identityPubkey: owner,
       ownerPubkey: owner,
     });
     expect(allowed).toBe(true);
   });
 
-  it("rejects message when chat id and pubkey do not match owner", () => {
+  it("normalizes npub/hex forms before comparing", () => {
+    const owner = "c".repeat(64);
     const allowed = isDirectMessageFromOwner({
-      chatId: "chat-other",
+      identityPubkey: owner,
+      ownerPubkey: owner,
+    });
+    expect(allowed).toBe(true);
+  });
+
+  it("rejects message when identity pubkey does not match owner pubkey", () => {
+    const allowed = isDirectMessageFromOwner({
       identityPubkey: "f".repeat(64),
       ownerPubkey: "d".repeat(64),
-      ownerChatId: "chat-expected",
     });
     expect(allowed).toBe(false);
   });

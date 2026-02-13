@@ -238,7 +238,6 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
             ...cfg.channels?.ndr,
             enabled: true,
             ownerPubkey,
-            ownerChatId: chatId,
           },
         },
       };
