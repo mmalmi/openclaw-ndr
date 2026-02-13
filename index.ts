@@ -5,7 +5,7 @@ import { ndrPlugin } from "./src/channel.js";
 import { setNdrRuntime } from "./src/runtime.js";
 
 const plugin = {
-  id: "openclaw-ndr",
+  id: "ndr",
   name: "NDR",
   description: "Forward-secure E2E encryption via nostr-double-ratchet",
   configSchema: emptyPluginConfigSchema(),
