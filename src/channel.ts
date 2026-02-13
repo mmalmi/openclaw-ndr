@@ -51,6 +51,32 @@ function normalizePubkeySafe(input?: string | null): string | null {
   }
 }
 
+type RuntimeConfigStore = {
+  loadConfig: () => OpenClawConfig;
+  writeConfigFile?: (cfg: OpenClawConfig) => Promise<void>;
+};
+
+export function withOwnerPubkeyLocked(cfg: OpenClawConfig, ownerPubkey: string): OpenClawConfig {
+  const normalized = normalizePubkey(ownerPubkey);
+  const channels = (cfg.channels ?? {}) as Record<string, unknown>;
+  const ndrSection =
+    channels.ndr && typeof channels.ndr === "object"
+      ? (channels.ndr as Record<string, unknown>)
+      : {};
+
+  return {
+    ...cfg,
+    channels: {
+      ...channels,
+      ndr: {
+        ...ndrSection,
+        enabled: true,
+        ownerPubkey: normalized,
+      },
+    },
+  };
+}
+
 export function shouldAutoAcceptGroupInvite(ownerPubkey: string | null, senderPubkey?: string): boolean {
   const owner = normalizePubkeySafe(ownerPubkey);
   const sender = normalizePubkeySafe(senderPubkey);
@@ -327,12 +353,44 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       }
 
       const runtime = getNdrRuntime();
+      let ownerPubkey = account.ownerPubkey;
+
+      const ensureOwnerLocked = async (candidatePubkey: string, source: "session_created" | "first_message", chatId?: string) => {
+        const normalized = normalizePubkeySafe(candidatePubkey);
+        if (!normalized || ownerPubkey) return;
+
+        ownerPubkey = normalized;
+        account.ownerPubkey = normalized;
+
+        const runtimeConfig = runtime.config as RuntimeConfigStore;
+        if (typeof runtimeConfig.writeConfigFile !== "function") {
+          ctx.log?.warn(
+            `[${account.accountId}] Owner pubkey locked in memory from ${source}${chatId ? ` (${chatId})` : ""}, but runtime config writer is unavailable`,
+          );
+          return;
+        }
+
+        try {
+          const nextCfg = withOwnerPubkeyLocked(runtimeConfig.loadConfig(), normalized);
+          await runtimeConfig.writeConfigFile(nextCfg);
+          ctx.log?.info(
+            `[${account.accountId}] Locked owner pubkey from ${source}${chatId ? ` (${chatId})` : ""}`,
+          );
+        } catch (err) {
+          ctx.log?.warn(
+            `[${account.accountId}] Failed to persist owner pubkey lock from ${source}: ${String(err)}`,
+          );
+        }
+      };
 
       const bus = await startNdrBus({
         accountId: account.accountId,
         relays: account.relays,
         ndrPath: account.ndrPath,
         dataDir: account.dataDir,
+        onNewSession: async (newChatId, theirPubkey) => {
+          await ensureOwnerLocked(theirPubkey, "session_created", newChatId);
+        },
         onReaction: (chatId, fromPubkey, messageId, emoji) => {
           const cfg = runtime.config.loadConfig();
           const route = runtime.channel.routing.resolveAgentRoute({
@@ -375,12 +433,14 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             // If lookup fails, fall back to senderPubkey
           }
 
+          await ensureOwnerLocked(identityPubkey, "first_message", chatId);
+
           const isOwner = isDirectMessageFromOwner({
             identityPubkey,
-            ownerPubkey: account.ownerPubkey,
+            ownerPubkey,
           });
 
-          if (!isOwner && account.ownerPubkey) {
+          if (!isOwner && ownerPubkey) {
             // Non-owner message - log and ignore
             ctx.log?.info(
               `[${account.accountId}] Ignoring message from non-owner ${identityPubkey} in chat ${chatId}`,
@@ -616,10 +676,10 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           if (action !== "created") return;
           if (markGroupInviteSeen(account.accountId, groupId)) return;
 
-          const ownerPubkey = account.ownerPubkey;
+          const owner = ownerPubkey;
           const senderLabel = senderPubkey ? `${senderPubkey.slice(0, 16)}...` : "unknown sender";
 
-          if (shouldAutoAcceptGroupInvite(ownerPubkey, senderPubkey)) {
+          if (shouldAutoAcceptGroupInvite(owner, senderPubkey)) {
             try {
               await bus.acceptGroup(groupId);
               ctx.log?.info(`[${account.accountId}] Auto-accepted group invite ${groupId} from owner`);
@@ -631,7 +691,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             return;
           }
 
-          if (!ownerPubkey) {
+          if (!owner) {
             ctx.log?.info(
               `[${account.accountId}] Group invite ${groupId} from ${senderLabel} (no owner set). Run: ndr group accept ${groupId}`,
             );
@@ -640,7 +700,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
 
           try {
             const chats = await bus.listChats();
-            const ownerHex = normalizePubkeySafe(ownerPubkey);
+            const ownerHex = normalizePubkeySafe(owner);
             const ownerChat = ownerHex
               ? chats.find((chat) => normalizePubkeySafe(chat.their_pubkey) === ownerHex)
               : undefined;
