@@ -58,6 +58,22 @@ export function shouldAutoAcceptGroupInvite(ownerPubkey: string | null, senderPu
   return owner === sender;
 }
 
+export function isDirectMessageFromOwner(params: {
+  chatId: string;
+  identityPubkey: string;
+  ownerPubkey: string | null;
+  ownerChatId?: string | null;
+}): boolean {
+  const ownerChatId = params.ownerChatId?.trim();
+  if (ownerChatId && params.chatId === ownerChatId) {
+    return true;
+  }
+  const owner = normalizePubkeySafe(params.ownerPubkey);
+  const sender = normalizePubkeySafe(params.identityPubkey);
+  if (!owner || !sender) return false;
+  return owner === sender;
+}
+
 type GroupPolicy = "open" | "allowlist" | "disabled";
 
 type GroupGateResult = {
@@ -365,11 +381,18 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             // If lookup fails, fall back to senderPubkey
           }
 
-          const isOwner = account.ownerPubkey && identityPubkey === account.ownerPubkey;
+          const isOwner = isDirectMessageFromOwner({
+            chatId,
+            identityPubkey,
+            ownerPubkey: account.ownerPubkey,
+            ownerChatId: account.config.ownerChatId,
+          });
 
-          if (!isOwner && account.ownerPubkey) {
+          if (!isOwner && (account.ownerPubkey || account.config.ownerChatId)) {
             // Non-owner message - log and ignore
-            ctx.log?.info(`[${account.accountId}] Ignoring message from non-owner ${identityPubkey}`);
+            ctx.log?.info(
+              `[${account.accountId}] Ignoring message from non-owner ${identityPubkey} in chat ${chatId}`,
+            );
             return;
           }
 

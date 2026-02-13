@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { ResolvedNdrAccount } from "./types.js";
-import { isGroupMessageAllowed, shouldAutoAcceptGroupInvite } from "./channel.js";
+import {
+  isDirectMessageFromOwner,
+  isGroupMessageAllowed,
+  shouldAutoAcceptGroupInvite,
+} from "./channel.js";
 
 function makeAccount(overrides: Partial<ResolvedNdrAccount> = {}): ResolvedNdrAccount {
   return {
@@ -116,5 +120,47 @@ describe("shouldAutoAcceptGroupInvite", () => {
     const owner = "d".repeat(64);
     const sender = "e".repeat(64);
     expect(shouldAutoAcceptGroupInvite(owner, sender)).toBe(false);
+  });
+});
+
+describe("isDirectMessageFromOwner", () => {
+  it("allows message when chat id matches ownerChatId", () => {
+    const allowed = isDirectMessageFromOwner({
+      chatId: "chat-123",
+      identityPubkey: "b".repeat(64),
+      ownerPubkey: "a".repeat(64),
+      ownerChatId: "chat-123",
+    });
+    expect(allowed).toBe(true);
+  });
+
+  it("trims ownerChatId before comparing", () => {
+    const allowed = isDirectMessageFromOwner({
+      chatId: "chat-trim",
+      identityPubkey: "b".repeat(64),
+      ownerPubkey: "a".repeat(64),
+      ownerChatId: "  chat-trim  ",
+    });
+    expect(allowed).toBe(true);
+  });
+
+  it("falls back to owner pubkey comparison when ownerChatId is absent", () => {
+    const owner = "c".repeat(64);
+    const allowed = isDirectMessageFromOwner({
+      chatId: "other-chat",
+      identityPubkey: owner,
+      ownerPubkey: owner,
+    });
+    expect(allowed).toBe(true);
+  });
+
+  it("rejects message when chat id and pubkey do not match owner", () => {
+    const allowed = isDirectMessageFromOwner({
+      chatId: "chat-other",
+      identityPubkey: "f".repeat(64),
+      ownerPubkey: "d".repeat(64),
+      ownerChatId: "chat-expected",
+    });
+    expect(allowed).toBe(false);
   });
 });

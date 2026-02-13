@@ -238,6 +238,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
             ...cfg.channels?.ndr,
             enabled: true,
             ownerPubkey,
+            ownerChatId: chatId,
           },
         },
       };
@@ -250,10 +251,17 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       ];
       if (sendError) {
         successMsg.push("", `Warning: Failed to send hello message: ${sendError.slice(0, 100)}`);
+        if (sendError.toLowerCase().includes("not initiator")) {
+          successMsg.push(
+            "",
+            "Tip: start the gateway first, then send the first message from chat.iris.to.",
+          );
+        }
       } else {
         successMsg.push("", "Hello message sent! Check chat.iris.to");
       }
       successMsg.push("", "Start the gateway: openclaw gateway run");
+      successMsg.push("", "After the gateway starts, send a fresh message to verify delivery.");
 
       await prompter.note(successMsg.join("\n"), "Setup Complete");
 

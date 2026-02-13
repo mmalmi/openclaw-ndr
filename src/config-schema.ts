@@ -7,6 +7,9 @@ export const NdrConfigSchema = z.object({
   /** Owner's pubkey (npub or hex). Only messages from this pubkey are handled as commands. */
   ownerPubkey: z.string().optional(),
 
+  /** Owner chat id captured during onboarding. When set, only this chat is treated as command-authorized. */
+  ownerChatId: z.string().optional(),
+
   /** Nostr relays to connect to */
   relays: z.array(z.string()).optional(),
 
