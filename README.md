@@ -1,4 +1,4 @@
-# @openclaw/ndr
+# openclaw-ndr
 
 OpenClaw channel plugin for [nostr-double-ratchet](https://files.iris.to/#/npub1xndmdgymsf4a34rzr7346vp8qcptxf75pjqweh8naa8rklgxpfqqmfjtce/nostr-double-ratchet) - forward-secure end-to-end encrypted messaging over Nostr.
 
@@ -53,14 +53,16 @@ Select the NDR channel when prompted. The onboarding will:
 1. Check if `ndr` CLI is installed
 2. Generate a private pairing link (and QR code)
 3. Wait for you to accept it in [chat.iris.to](https://chat.iris.to)
-4. Send a hello message and configure your owner pubkey (so only you can control the agent)
+4. Configure your owner pubkey automatically from the accepted invite (no manual `npub` input)
+5. Attempt a hello message to confirm the chat
 
 ### Accepting The Pairing Link
 
 1. Run `openclaw onboard` and select NDR
 2. Copy the pairing URL printed by the onboarding (or scan the QR)
 3. Open it in your browser (it will take you to chat.iris.to and start the chat)
-4. After you accept, the bot will send a hello message and lock the agent to your pubkey
+4. After you accept, the agent locks to your pubkey automatically
+5. Start `openclaw gateway run` and send a fresh message if the onboarding hello message did not send
 
 ### Start the gateway
 
@@ -76,7 +78,7 @@ The onboarding writes config to `~/.openclaw/openclaw.json`. You can also edit i
 {
   channels: {
     ndr: {
-      // Owner's pubkey - only messages from this npub are handled as commands
+      // Owner's pubkey (npub or hex) - only messages from this key are handled as commands
       ownerPubkey: "npub1...",
 
       // Optional: Nostr relays (defaults shown below)
@@ -100,7 +102,7 @@ The onboarding writes config to `~/.openclaw/openclaw.json`. You can also edit i
       // Optional: Allowed senders in groups (npub/hex, "*" allows anyone)
       groupAllowFrom: ["npub1...", "abcdef..."],
 
-      // Optional: Allowed group IDs (UUIDs). Can be an array or a map.
+      // Optional: Allowed group IDs (UUIDs). When set, only listed groups are handled.
       groups: ["11111111-1111-1111-1111-111111111111"]
     }
   }
@@ -110,7 +112,7 @@ The onboarding writes config to `~/.openclaw/openclaw.json`. You can also edit i
 **Authorization:**
 - Only messages from `ownerPubkey` are handled as agent commands
 - Messages from other pubkeys are logged but ignored
-- If `ownerPubkey` is not set, all messages are handled
+- If `ownerPubkey` is not set, the first accepted invite/contact is locked as owner
 
 ## Usage
 
@@ -130,8 +132,8 @@ ndr chat list
 
 NDR groups are managed by the `ndr` CLI. This plugin listens for `group_message`
 events and can reply in groups when allowed by `groupPolicy` (default: `open`).
-Group invites are not auto-accepted; if the inviter matches `ownerPubkey`, the
-plugin auto-accepts, otherwise it notifies the owner to decide.
+Group invites from `ownerPubkey` are auto-accepted; other group invites are
+not auto-accepted and the owner is notified to decide.
 
 ```bash
 # Create a group (members are hex pubkeys)
