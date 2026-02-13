@@ -58,6 +58,17 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
   },
 
   configure: async ({ cfg, prompter }) => {
+    const baseCfg: OpenClawConfig = {
+      ...cfg,
+      channels: {
+        ...cfg.channels,
+        ndr: {
+          ...cfg.channels?.ndr,
+          enabled: true,
+        },
+      },
+    };
+
     await prompter.note(
       [
         "NDR (Nostr Double Ratchet) provides forward-secure E2E encrypted messaging.",
@@ -101,7 +112,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
         ].join("\n"),
         "Blocked",
       );
-      return { cfg };
+      return { cfg: baseCfg };
     }
 
     if (!hashtreeAvailable) {
@@ -118,7 +129,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
     }
 
     const defaultAccountId = resolveDefaultNdrAccountId(cfg);
-    const account = resolveNdrAccount({ cfg, accountId: defaultAccountId });
+    const account = resolveNdrAccount({ cfg: baseCfg, accountId: defaultAccountId });
 
     // Pairing flow: bot generates a private invite URL; user opens it in chat.iris.to.
     // We'll wait for the invite to be accepted, then lock the agent to that pubkey.
@@ -220,7 +231,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
           ].join("\n"),
           "Pairing Failed",
         );
-        return { cfg };
+        return { cfg: baseCfg };
       }
 
       // Send hello message once paired.
@@ -231,11 +242,11 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       }
 
       const next: OpenClawConfig = {
-        ...cfg,
+        ...baseCfg,
         channels: {
-          ...cfg.channels,
+          ...baseCfg.channels,
           ndr: {
-            ...cfg.channels?.ndr,
+            ...baseCfg.channels?.ndr,
             enabled: true,
             ownerPubkey,
           },
