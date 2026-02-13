@@ -54,7 +54,7 @@ Select the NDR channel when prompted. The onboarding will:
 2. Generate a private pairing link (and QR code)
 3. Wait for you to accept it in [chat.iris.to](https://chat.iris.to)
 4. Configure your owner pubkey automatically from the accepted invite (no manual `npub` input)
-5. Attempt a hello message to confirm the chat
+5. In most cases, you send the first message from chat.iris.to after starting the gateway
 
 ### Accepting The Pairing Link
 
@@ -62,7 +62,8 @@ Select the NDR channel when prompted. The onboarding will:
 2. Copy the pairing URL printed by the onboarding (or scan the QR)
 3. Open it in your browser (it will take you to chat.iris.to and start the chat)
 4. After you accept, the agent locks to your pubkey automatically
-5. Start `openclaw gateway run` and send a fresh message if the onboarding hello message did not send
+5. Start `openclaw gateway run`
+6. Send the first DM from chat.iris.to, then the bot can reply
 
 ### Start the gateway
 
