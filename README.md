@@ -129,6 +129,28 @@ openclaw channels status --channel ndr
 ndr chat list
 ```
 
+## Release Smoke Tests
+
+Run these before publishing to verify both plugin and cross-app interop.
+
+### 1) OpenClaw plugin docker e2e (alice <-> bob)
+
+```bash
+pnpm test:e2e:docker
+```
+
+### 2) iris-chat interop using local nostr-double-ratchet TS build
+
+This always tests against your local library tree (not the currently published npm version).
+
+```bash
+# Optional overrides:
+# IRIS_CHAT_REPO=~/src/iris-chat
+# NDR_TS_REPO=~/src/nostr-double-ratchet/ts
+# REPEAT_EACH=8
+pnpm test:interop:iris-local-lib
+```
+
 ### Groups (NDR)
 
 NDR groups are managed by the `ndr` CLI. This plugin listens for `group_message`

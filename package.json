@@ -38,7 +38,9 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e:docker": "bash test/ndr-e2e-docker/run.sh",
+    "test:interop:iris-local-lib": "bash test/iris-chat-interop.sh"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0",
