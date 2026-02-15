@@ -18,6 +18,9 @@ if (!fs.existsSync(sharedDir)) {
   fs.mkdirSync(sharedDir, { recursive: true });
 }
 
+process.env.NDR_REAL = "/opt/cargo/bin/ndr";
+process.env.NDR_WRAPPER_LOG = "/shared/alice_invocations.jsonl";
+
 function writeText(path, text) {
   fs.writeFileSync(path, text, "utf8");
 }
@@ -38,23 +41,32 @@ const receivedPromise = new Promise((resolve, reject) => {
 const bus = await startNdrBus({
   accountId: "alice",
   relays,
-  ndrPath: "ndr",
+  ndrPath: "/e2e/ndr-wrapper.mjs",
   dataDir: "/tmp/ndr-alice",
-  onMessage: async (chatId, messageId, senderPubkey, text, reply) => {
-    writeJson(receivedPath, {
-      ok: true,
-      chatId,
-      messageId,
-      senderPubkey,
-      text,
-      at: new Date().toISOString(),
-    });
+  onMessage: async (chatId, messageId, senderPubkey, text, reply, _media, messageIds, replyToId) => {
     try {
-      await reply("ack: " + text);
-    } catch {
-      // best-effort
+      writeJson(receivedPath, {
+        ok: true,
+        chatId,
+        messageId,
+        messageIds,
+        replyToId,
+        senderPubkey,
+        text,
+        at: new Date().toISOString(),
+      });
+
+      if (!messageId) {
+        throw new Error("missing messageId (cannot validate reply threading)");
+      }
+
+      // Send a reply that references the incoming message id; Bob will validate reply_to_id.
+      await reply("ack: " + text, { replyToId: messageId });
+      resolveReceived();
+    } catch (err) {
+      writeText(errorPath, `onMessage: ${String(err?.message || err)}\n`);
+      rejectReceived(err);
     }
-    resolveReceived();
   },
   onError: (err, context) => {
     // keep listening, but record the most recent error
@@ -66,19 +78,13 @@ try {
   const invite = await bus.createInvite();
   writeText(invitePath, invite.inviteUrl + "\n");
 
-  while (Date.now() < deadline) {
-    // race: message handler will resolve
-    const remaining = Math.max(0, deadline - Date.now());
-    await Promise.race([receivedPromise, sleep(Math.min(500, remaining))]);
-    if (fs.existsSync(receivedPath)) {
-      process.exitCode = 0;
-      break;
-    }
-  }
+  const remaining = Math.max(0, deadline - Date.now());
+  await Promise.race([receivedPromise, sleep(remaining)]);
 
   if (!fs.existsSync(receivedPath)) {
     throw new Error(`timeout waiting for message (${timeoutMs}ms)`);
   }
+  process.exitCode = 0;
 } catch (err) {
   writeText(errorPath, `fatal: ${String(err?.message || err)}\n`);
   process.exitCode = 1;
@@ -91,4 +97,3 @@ try {
   // allow ndr child process to exit cleanly
   await sleep(250);
 }
-

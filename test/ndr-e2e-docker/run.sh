@@ -27,7 +27,11 @@ echo "[e2e] building openclaw-ndr dist..."
 pnpm -s build
 
 work="$(mktemp -d "/tmp/openclaw-ndr-e2e.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
+if [[ "${KEEP_WORK:-}" != "1" ]]; then
+  trap 'rm -rf "$work"' EXIT
+else
+  echo "[e2e] keeping work dir (KEEP_WORK=1): $work"
+fi
 
 echo "[e2e] staging docker context: $work"
 mkdir -p "$work/openclaw-ndr" "$work/nostr-double-ratchet" "$work/shared"
@@ -50,14 +54,74 @@ cd "$work"
 rm -f shared/* || true
 
 echo "[e2e] docker compose up (alice+bob)..."
-docker compose up --build --exit-code-from alice
+set +e
+docker compose up --build --exit-code-from bob
+compose_status=$?
+set -e
 
 echo "[e2e] results:"
 ls -la shared || true
 if [[ -f "shared/alice_received.json" ]]; then
+  echo
+  echo "[e2e] alice_received.json:"
   cat shared/alice_received.json
 else
   echo "missing shared/alice_received.json" >&2
   [[ -f "shared/alice_error.txt" ]] && cat shared/alice_error.txt >&2
   exit 1
 fi
+
+if [[ -f "shared/bob_received.json" ]]; then
+  echo
+  echo "[e2e] bob_received.json:"
+  cat shared/bob_received.json
+else
+  echo "missing shared/bob_received.json" >&2
+  [[ -f "shared/bob_error.txt" ]] && cat shared/bob_error.txt >&2
+  if [[ "${compose_status:-0}" -eq 0 ]]; then
+    exit 1
+  fi
+  exit "${compose_status}"
+fi
+
+if [[ -f "shared/alice_invocations.jsonl" ]]; then
+  echo
+  echo "[e2e] asserting reply invocation (--reply)..."
+  node - <<'NODE'
+const fs = require("fs");
+
+const received = JSON.parse(fs.readFileSync("shared/alice_received.json", "utf8"));
+const expected = String(received.messageId || "").trim();
+if (!expected) {
+  console.error("missing expected messageId in alice_received.json");
+  process.exit(1);
+}
+
+const lines = fs
+  .readFileSync("shared/alice_invocations.jsonl", "utf8")
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+
+const hasReplySend = lines.some(
+  (argv) =>
+    Array.isArray(argv) &&
+    argv.includes("send") &&
+    argv.includes("--reply") &&
+    argv.includes(expected),
+);
+
+if (!hasReplySend) {
+  console.error(`missing ndr send --reply ${expected} in alice_invocations.jsonl`);
+  process.exit(1);
+}
+NODE
+else
+  echo "missing shared/alice_invocations.jsonl (cannot assert --reply)" >&2
+  if [[ "${compose_status:-0}" -eq 0 ]]; then
+    exit 1
+  fi
+fi
+
+exit "${compose_status:-0}"

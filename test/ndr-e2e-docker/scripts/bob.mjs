@@ -18,6 +18,9 @@ if (!fs.existsSync(sharedDir)) {
   fs.mkdirSync(sharedDir, { recursive: true });
 }
 
+process.env.NDR_REAL = "/opt/cargo/bin/ndr";
+process.env.NDR_WRAPPER_LOG = "/shared/bob_invocations.jsonl";
+
 function writeText(path, text) {
   fs.writeFileSync(path, text, "utf8");
 }
@@ -39,13 +42,49 @@ const waitForInvite = async () => {
   throw new Error(`timeout waiting for invite (${timeoutMs}ms)`);
 };
 
+const waitForAliceReceived = async () => {
+  while (Date.now() < deadline) {
+    if (fs.existsSync("/shared/alice_received.json")) {
+      const raw = fs.readFileSync("/shared/alice_received.json", "utf8").trim();
+      if (!raw) {
+        await sleep(250);
+        continue;
+      }
+      try {
+        return JSON.parse(raw);
+      } catch {
+        // ignore and retry
+      }
+    }
+    await sleep(250);
+  }
+  throw new Error(`timeout waiting for alice_received.json (${timeoutMs}ms)`);
+};
+
+let resolveAck;
+let rejectAck;
+const ackPromise = new Promise((resolve, reject) => {
+  resolveAck = resolve;
+  rejectAck = reject;
+});
+let ackPayload = null;
+
 const bus = await startNdrBus({
   accountId: "bob",
   relays,
-  ndrPath: "ndr",
+  ndrPath: "/e2e/ndr-wrapper.mjs",
   dataDir: "/tmp/ndr-bob",
-  onMessage: async () => {
-    // ignore
+  onMessage: async (chatId, messageId, senderPubkey, text, _reply, _media, _messageIds, replyToId) => {
+    ackPayload = {
+      ok: true,
+      chatId,
+      messageId,
+      senderPubkey,
+      text,
+      replyToId,
+      at: new Date().toISOString(),
+    };
+    resolveAck();
   },
   onError: (err, context) => {
     writeText(errorPath, `${context}: ${String(err?.message || err)}\n`);
@@ -82,8 +121,25 @@ try {
     at: new Date().toISOString(),
   });
 
-  // Give Alice time to receive before we exit and kill our listener.
-  await sleep(2000);
+  const aliceReceived = await waitForAliceReceived();
+  const expectedParentId = String(aliceReceived?.messageId || "").trim();
+  if (!expectedParentId) {
+    throw new Error("alice_received.json missing messageId");
+  }
+
+  // Wait for Alice ack (which should be a reply to our ping).
+  const remaining = Math.max(0, deadline - Date.now());
+  await Promise.race([ackPromise, sleep(remaining)]);
+
+  if (!ackPayload) {
+    throw new Error(`timeout waiting for ack (${timeoutMs}ms)`);
+  }
+
+  writeJson("/shared/bob_received.json", {
+    ...ackPayload,
+    expectedReplyToId: expectedParentId,
+  });
+
   process.exitCode = 0;
 } catch (err) {
   writeText(errorPath, `fatal: ${String(err?.message || err)}\n`);
@@ -96,4 +152,3 @@ try {
   }
   await sleep(250);
 }
-
