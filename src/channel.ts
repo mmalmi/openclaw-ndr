@@ -567,15 +567,18 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           });
           ctx.log?.debug(`[${account.accountId}] ${text}`);
         },
-        onMessage: async (chatId, messageId, senderPubkey, text, replyFn, media) => {
+        onMessage: async (chatId, messageId, senderPubkey, text, replyFn, media, messageIds) => {
           ctx.log?.debug(`[${account.accountId}] Message from ${senderPubkey} in chat ${chatId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
 
           // Send seen receipt - for a bot there's no delivered-but-unread state
-          if (messageId) {
+          const receiptMessageIds = Array.from(new Set([...(messageIds ?? []), messageId].filter(Boolean)));
+          if (receiptMessageIds.length > 0) {
             try {
-              await bus.sendReceipt(chatId, "seen", [messageId]);
-            } catch {
-              // Receipt failed, continue anyway
+              await bus.sendReceipt(chatId, "seen", receiptMessageIds);
+            } catch (err) {
+              ctx.log?.warn(
+                `[${account.accountId}] Failed to send seen receipt for ${chatId}/${receiptMessageIds.join(",")}: ${String(err)}`,
+              );
             }
           }
 

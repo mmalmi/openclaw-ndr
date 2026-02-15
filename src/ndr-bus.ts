@@ -13,7 +13,15 @@ export interface NdrBusOptions {
   relays: string[];
   ndrPath: string;
   dataDir: string | null;
-  onMessage: (chatId: string, messageId: string, senderPubkey: string, text: string, reply: (text: string) => Promise<void>, media?: NdrMessageMedia) => Promise<void>;
+  onMessage: (
+    chatId: string,
+    messageId: string,
+    senderPubkey: string,
+    text: string,
+    reply: (text: string) => Promise<void>,
+    media?: NdrMessageMedia,
+    messageIds?: string[],
+  ) => Promise<void>;
   onGroupMessage?: (groupId: string, messageId: string, senderPubkey: string, text: string, reply: (text: string) => Promise<void>, media?: NdrMessageMedia) => Promise<void>;
   onReaction?: (chatId: string, fromPubkey: string, messageId: string, emoji: string) => void;
   onGroupReaction?: (groupId: string, fromPubkey: string, messageId: string, emoji: string) => void;
@@ -45,6 +53,7 @@ export type ParsedNdrEvent =
       type: "message";
       chatId: string;
       messageId: string;
+      messageIds: string[];
       senderPubkey: string;
       content: string;
       timestamp?: number;
@@ -91,6 +100,32 @@ export type ParsedNdrEvent =
       senderPubkey?: string;
     };
 
+function collectMessageIds(json: Record<string, unknown>): string[] {
+  const candidates: unknown[] = [
+    json.inner_message_id,
+    json.innerMessageId,
+    json.rumor_id,
+    json.rumorId,
+    json.inner_id,
+    json.innerId,
+    json.message_id,
+    json.messageId,
+    json.id,
+    json.outer_message_id,
+    json.outerMessageId,
+    json.event_id,
+    json.eventId,
+  ];
+  const ids: string[] = [];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (!trimmed || ids.includes(trimmed)) continue;
+    ids.push(trimmed);
+  }
+  return ids;
+}
+
 export function parseNdrEvent(line: string): ParsedNdrEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -112,14 +147,13 @@ export function parseNdrEvent(line: string): ParsedNdrEvent | null {
           : (typeof json.sender_pubkey === "string" ? json.sender_pubkey : null);
         const content = typeof json.content === "string" ? json.content : null;
         if (!chatId || !senderPubkey || content === null) return null;
-        const messageId =
-          typeof json.message_id === "string"
-            ? json.message_id
-            : (typeof json.messageId === "string" ? json.messageId : (typeof json.id === "string" ? json.id : ""));
+        const messageIds = collectMessageIds(json);
+        const messageId = messageIds[0] ?? "";
         return {
           type: "message",
           chatId,
           messageId,
+          messageIds,
           senderPubkey,
           content,
           timestamp: typeof json.timestamp === "number" ? json.timestamp : undefined,
@@ -293,7 +327,7 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
         if (!parsed) continue;
 
         if (parsed.type === "message") {
-          const { chatId, messageId, senderPubkey, content } = parsed;
+          const { chatId, messageId, messageIds, senderPubkey, content } = parsed;
 
           const reply = async (text: string) => {
               await runNdrCommand(ndrPath, [...baseArgs, "send", chatId, text], ndrEnv);
@@ -306,11 +340,11 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
               url: media.url,
             } : undefined;
             const nextContent = media ? textContent : content;
-            onMessage(chatId, messageId, senderPubkey, nextContent, reply, messageMedia).catch((err) => {
+            onMessage(chatId, messageId, senderPubkey, nextContent, reply, messageMedia, messageIds).catch((err) => {
               onError?.(err, "message_handler");
             });
           }).catch((err) => {
-            onMessage(chatId, messageId, senderPubkey, content, reply).catch((handlerErr) => {
+            onMessage(chatId, messageId, senderPubkey, content, reply, undefined, messageIds).catch((handlerErr) => {
               onError?.(handlerErr, "message_handler");
             });
           });

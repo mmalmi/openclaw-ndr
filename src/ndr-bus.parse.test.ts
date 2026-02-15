@@ -2,6 +2,31 @@ import { describe, it, expect } from "vitest";
 import { parseNdrEvent } from "./ndr-bus.js";
 
 describe("parseNdrEvent", () => {
+  it("prefers inner message id while preserving fallback ids", () => {
+    const line = JSON.stringify({
+      event: "message",
+      chat_id: "chat-1",
+      from_pubkey: "c".repeat(64),
+      content: "hello",
+      inner_message_id: "inner-1",
+      message_id: "outer-1",
+      event_id: "outer-1",
+      id: "legacy-1",
+      timestamp: 456,
+    });
+
+    const parsed = parseNdrEvent(line);
+    expect(parsed).toEqual({
+      type: "message",
+      chatId: "chat-1",
+      messageId: "inner-1",
+      messageIds: ["inner-1", "outer-1", "legacy-1"],
+      senderPubkey: "c".repeat(64),
+      content: "hello",
+      timestamp: 456,
+    });
+  });
+
   it("parses group_message events", () => {
     const line = JSON.stringify({
       event: "group_message",

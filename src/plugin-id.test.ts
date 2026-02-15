@@ -10,14 +10,22 @@ function readJson(filePath: string): JsonRecord {
 }
 
 describe("plugin id consistency", () => {
-  it("uses ndr as plugin id across export, manifest, and package metadata", () => {
+  it("uses openclaw-ndr as plugin id across export, manifest, and package metadata", () => {
     const root = path.resolve(import.meta.dirname, "..");
     const manifest = readJson(path.join(root, "openclaw.plugin.json"));
     const pkg = readJson(path.join(root, "package.json"));
     const openclaw = (pkg.openclaw ?? {}) as JsonRecord;
 
-    expect(plugin.id).toBe("ndr");
-    expect(manifest.id).toBe("ndr");
-    expect(openclaw.id).toBe("ndr");
+    expect(plugin.id).toBe("openclaw-ndr");
+    expect(manifest.id).toBe("openclaw-ndr");
+    expect(openclaw.id).toBe("openclaw-ndr");
+  });
+
+  it("keeps channel id as ndr", () => {
+    const root = path.resolve(import.meta.dirname, "..");
+    const manifest = readJson(path.join(root, "openclaw.plugin.json"));
+    const channels = Array.isArray(manifest.channels) ? manifest.channels : [];
+
+    expect(channels).toContain("ndr");
   });
 });

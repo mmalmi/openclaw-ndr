@@ -27,7 +27,7 @@
     "README.md"
   ],
   "openclaw": {
-    "id": "ndr",
+    "id": "openclaw-ndr",
     "extensions": [
       "./index.ts"
     ],
@@ -40,6 +40,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e:docker": "bash test/ndr-e2e-docker/run.sh",
+    "test:e2e:iris-seen": "bash test/iris-seen-receipt/run.sh",
     "test:interop:iris-local-lib": "bash test/iris-chat-interop.sh"
   },
   "dependencies": {

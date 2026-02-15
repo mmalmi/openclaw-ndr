@@ -151,6 +151,22 @@ This always tests against your local library tree (not the currently published n
 pnpm test:interop:iris-local-lib
 ```
 
+### 3) dockerized OpenClaw bot + iris-chat seen receipt interop
+
+Runs a real OpenClaw gateway bot in Docker with this plugin and verifies in
+Playwright that Iris marks the outgoing message as `seen`.
+The harness applies a temporary patch to the copied `ndr` source so listen
+events use inner rumor IDs for receipts.
+
+```bash
+# Optional overrides:
+# IRIS_CHAT_REPO=~/src/iris-chat
+# NDR_REPO=~/src/nostr-double-ratchet
+# OPENCLAW_REPO=~/src/openclaw
+# RELAY_URL=wss://temp.iris.to
+pnpm test:e2e:iris-seen
+```
+
 ### Groups (NDR)
 
 NDR groups are managed by the `ndr` CLI. This plugin listens for `group_message`
