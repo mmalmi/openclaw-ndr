@@ -1,6 +1,6 @@
 {
   "name": "openclaw-ndr",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "type": "module",
   "description": "OpenClaw channel plugin for nostr-double-ratchet (forward-secure E2E encryption)",
   "keywords": [

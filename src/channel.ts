@@ -23,6 +23,113 @@ import { ndrOnboardingAdapter } from "./onboarding.js";
 // Store active bus handles per account
 const activeBuses = new Map<string, NdrBusHandle>();
 
+type ReplyContextEntry = {
+  sender: string;
+  body: string;
+};
+
+const REPLY_CONTEXT_CACHE_LIMIT = 500;
+const replyContextCache = new Map<string, Map<string, ReplyContextEntry>>();
+
+function cacheReplyContext(peerKey: string, messageIds: string[], entry: ReplyContextEntry): void {
+  if (messageIds.length === 0) return;
+  let store = replyContextCache.get(peerKey);
+  if (!store) {
+    store = new Map();
+    replyContextCache.set(peerKey, store);
+  }
+  for (const rawId of messageIds) {
+    const id = rawId.trim();
+    if (!id) continue;
+    // Refresh insertion order.
+    store.delete(id);
+    store.set(id, entry);
+  }
+  while (store.size > REPLY_CONTEXT_CACHE_LIMIT) {
+    const oldest = store.keys().next().value as string | undefined;
+    if (!oldest) break;
+    store.delete(oldest);
+  }
+}
+
+function resolveReplyContext(peerKey: string, replyToId?: string): ReplyContextEntry | undefined {
+  const id = replyToId?.trim();
+  if (!id) return undefined;
+  return replyContextCache.get(peerKey)?.get(id);
+}
+
+type ReplyToMode = "off" | "first" | "all";
+
+function resolveNdrReplyToMode(cfg: OpenClawConfig): ReplyToMode {
+  const raw = (cfg.channels as Record<string, unknown> | undefined)?.ndr as
+    | Record<string, unknown>
+    | undefined;
+  const mode = raw?.replyToMode;
+  return mode === "off" || mode === "first" || mode === "all" ? mode : "off";
+}
+
+async function resolveNdrMediaLink(mediaUrl?: string): Promise<string> {
+  const trimmed = mediaUrl?.trim();
+  if (!trimmed) return "[media attachment]";
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("nhash1")) {
+    return trimmed;
+  }
+
+  // Local file path: upload via htree for nhash links.
+  try {
+    const { execSync } = await import("child_process");
+    const escapedPath = trimmed.replace(/'/g, "'\\''");
+    const output = execSync(`htree add '${escapedPath}'`, {
+      encoding: "utf-8",
+      timeout: 60000,
+    });
+    const urlMatch = output.match(/url:\s+(nhash1[^\s]+)/);
+    if (urlMatch) {
+      return urlMatch[1];
+    }
+  } catch {
+    // Ignore and fall back below.
+  }
+  return trimmed;
+}
+
+async function sendNdrTextOrMedia(params: {
+  bus: NdrBusHandle;
+  to: string;
+  isGroup: boolean;
+  text?: string;
+  mediaUrl?: string;
+  replyToId?: string;
+  cfg: OpenClawConfig;
+  accountId: string;
+}): Promise<void> {
+  const core = getNdrRuntime();
+  const tableMode = core.channel.text.resolveMarkdownTableMode({
+    cfg: params.cfg,
+    channel: "ndr",
+    accountId: params.accountId,
+  });
+  const caption = core.channel.text.convertMarkdownTables(params.text ?? "", tableMode);
+  const replyToId = params.replyToId?.trim() || undefined;
+
+  if (!params.mediaUrl) {
+    if (params.isGroup) {
+      await params.bus.sendGroupMessage(params.to, caption, { replyToId });
+    } else {
+      await params.bus.sendMessage(params.to, caption, { replyToId });
+    }
+    return;
+  }
+
+  const mediaLink = await resolveNdrMediaLink(params.mediaUrl);
+  const message = caption ? `${caption}\n${mediaLink}` : mediaLink;
+  if (params.isGroup) {
+    await params.bus.sendGroupMessage(params.to, message, { replyToId });
+  } else {
+    await params.bus.sendMessage(params.to, message, { replyToId });
+  }
+}
+
 const GROUP_ID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 function isGroupId(input: string): boolean {
@@ -257,6 +364,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
     chatTypes: ["direct", "group"],
     reactions: true,
     media: true, // Supports nhash media via htree
+    reply: true,
   },
   reload: {
     configPrefixes: [
@@ -376,65 +484,46 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   outbound: {
     deliveryMode: "direct",
     textChunkLimit: 4000,
-    sendText: async ({ to, text, accountId }: { to: string; text?: string; accountId?: string }) => {
+    sendText: async (params: { to: string; text?: string; accountId?: string; replyToId?: string }) => {
       const core = getNdrRuntime();
-      const aid = accountId ?? DEFAULT_ACCOUNT_ID;
+      const aid = params.accountId ?? DEFAULT_ACCOUNT_ID;
       const bus = activeBuses.get(aid);
       if (!bus) {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
-      const tableMode = core.channel.text.resolveMarkdownTableMode({
-        cfg: core.config.loadConfig(),
-        channel: "ndr",
+      const cfg = core.config.loadConfig();
+      const isGroup = isGroupId(params.to);
+      await sendNdrTextOrMedia({
+        bus,
+        to: params.to,
+        isGroup,
+        text: params.text,
+        replyToId: params.replyToId,
+        cfg,
         accountId: aid,
       });
-      const message = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
-      if (isGroupId(to)) {
-        await bus.sendGroupMessage(to, message);
-      } else {
-        await bus.sendMessage(to, message);
-      }
-      return { channel: "ndr", to };
+      return { channel: "ndr", to: params.to };
     },
-    sendMedia: async ({ to, text, mediaUrl, accountId }: { to: string; text?: string; mediaUrl?: string; accountId?: string }) => {
+    sendMedia: async (params: { to: string; text?: string; mediaUrl?: string; accountId?: string; replyToId?: string }) => {
       const core = getNdrRuntime();
-      const aid = accountId ?? DEFAULT_ACCOUNT_ID;
+      const aid = params.accountId ?? DEFAULT_ACCOUNT_ID;
       const bus = activeBuses.get(aid);
       if (!bus) {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
-      const caption = text ? `${text}\n` : "";
-
-      // mediaUrl could be a local file path or a remote URL
-      let mediaLink = mediaUrl ?? "[media attachment]";
-      if (mediaUrl && !mediaUrl.startsWith("http")) {
-        // Local file path - upload via htree
-        try {
-          const { execSync } = await import("child_process");
-          // Properly escape the file path for shell
-          const escapedPath = mediaUrl.replace(/'/g, "'\\''");
-          const output = execSync(`htree add '${escapedPath}'`, {
-            encoding: "utf-8",
-            timeout: 60000,
-          });
-          // Parse "url: nhash1.../filename" from output
-          const urlMatch = output.match(/url:\s+(nhash1[^\s]+)/);
-          if (urlMatch) {
-            mediaLink = urlMatch[1];
-          }
-        } catch {
-          // htree not available or failed - fall back to original URL
-          mediaLink = mediaUrl ?? "[media: upload failed]";
-        }
-      }
-
-      const message = `${caption}${mediaLink}`;
-      if (isGroupId(to)) {
-        await bus.sendGroupMessage(to, message);
-      } else {
-        await bus.sendMessage(to, message);
-      }
-      return { channel: "ndr", to };
+      const cfg = core.config.loadConfig();
+      const isGroup = isGroupId(params.to);
+      await sendNdrTextOrMedia({
+        bus,
+        to: params.to,
+        isGroup,
+        text: params.text,
+        mediaUrl: params.mediaUrl,
+        replyToId: params.replyToId,
+        cfg,
+        accountId: aid,
+      });
+      return { channel: "ndr", to: params.to };
     },
   },
 
@@ -567,7 +656,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           });
           ctx.log?.debug(`[${account.accountId}] ${text}`);
         },
-        onMessage: async (chatId, messageId, senderPubkey, text, replyFn, media, messageIds) => {
+        onMessage: async (chatId, messageId, senderPubkey, text, _replyFn, media, messageIds, replyToId) => {
           ctx.log?.debug(`[${account.accountId}] Message from ${senderPubkey} in chat ${chatId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
 
           // Send seen receipt - for a bot there's no delivered-but-unread state
@@ -634,6 +723,11 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             envelope: envelopeOptions,
           });
 
+          const peerKey = `dm:${chatId}`;
+          cacheReplyContext(peerKey, receiptMessageIds, { sender: identityPubkey, body: text });
+          const cachedReply = resolveReplyContext(peerKey, replyToId);
+          const sid = receiptMessageIds[0] ?? `${chatId}-${Date.now()}`;
+
           // Finalize the inbound context
           const ctxPayload = runtime.channel.reply.finalizeInboundContext({
             Body: body,
@@ -649,7 +743,13 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             SenderId: identityPubkey,
             Provider: "ndr" as const,
             Surface: "ndr" as const,
-            MessageSid: `${chatId}-${Date.now()}`,
+            MessageSid: sid,
+            MessageSids: receiptMessageIds.length > 0 ? receiptMessageIds : undefined,
+            ReplyToId: replyToId?.trim() || undefined,
+            ReplyToBody: replyToId
+              ? (cachedReply?.body ?? `(reply to message id: ${replyToId})`)
+              : undefined,
+            ReplyToSender: cachedReply?.sender,
             CommandAuthorized: true, // Owner is always authorized
             OriginatingChannel: "ndr" as const,
             OriginatingTo: ndrTo,
@@ -693,20 +793,71 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             },
           });
 
+          const replyToMode = resolveNdrReplyToMode(cfg);
+          let hasRepliedRef = false;
+
           const { dispatcher, replyOptions, markDispatchIdle } = runtime.channel.reply.createReplyDispatcherWithTyping({
             responsePrefix: prefixContext.responsePrefix,
             responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
             humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
             onReplyStart: typingCallbacks.onReplyStart,
-            deliver: async (payload: { text?: string }) => {
-              ctx.log?.info(`[${account.accountId}] NDR deliver called with payload: ${JSON.stringify(payload).slice(0, 200)}`);
-              const responseText = payload.text ?? "";
-              if (responseText) {
-                ctx.log?.info(`[${account.accountId}] NDR sending reply: ${responseText.slice(0, 100)}...`);
-                await replyFn(responseText);
-                ctx.log?.info(`[${account.accountId}] NDR reply sent successfully`);
-              } else {
-                ctx.log?.warn(`[${account.accountId}] NDR deliver called but no text in payload`);
+            deliver: async (payload: Record<string, unknown>) => {
+              const text = typeof payload.text === "string" ? payload.text : "";
+              const mediaUrls = Array.isArray(payload.mediaUrls)
+                ? payload.mediaUrls.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+                : [];
+              const mediaUrl = typeof payload.mediaUrl === "string" ? payload.mediaUrl.trim() : "";
+              const mediaList = mediaUrls.length > 0 ? mediaUrls : mediaUrl ? [mediaUrl] : [];
+
+              if (!text && mediaList.length === 0) {
+                return;
+              }
+
+              const replyRefCandidate =
+                typeof payload.replyToId === "string" && payload.replyToId.trim()
+                  ? payload.replyToId.trim()
+                  : undefined;
+              const isExplicit = Boolean(payload.replyToTag) || Boolean(payload.replyToCurrent);
+              const shouldUseReplyRef = (): string | undefined => {
+                if (!replyRefCandidate) return undefined;
+                if (replyToMode === "off") {
+                  return isExplicit ? replyRefCandidate : undefined;
+                }
+                if (replyToMode === "all") {
+                  return replyRefCandidate;
+                }
+                if (hasRepliedRef) {
+                  return undefined;
+                }
+                return replyRefCandidate;
+              };
+
+              const sendReply = async (opts: { text?: string; mediaUrl?: string }) => {
+                const replyToId = shouldUseReplyRef();
+                await sendNdrTextOrMedia({
+                  bus,
+                  to: chatId,
+                  isGroup: false,
+                  text: opts.text,
+                  mediaUrl: opts.mediaUrl,
+                  replyToId,
+                  cfg,
+                  accountId: account.accountId,
+                });
+                if (replyToMode === "first" && replyToId) {
+                  hasRepliedRef = true;
+                }
+              };
+
+              if (mediaList.length === 0) {
+                await sendReply({ text });
+                return;
+              }
+
+              let first = true;
+              for (const url of mediaList) {
+                await sendReply({ text: first ? text : undefined, mediaUrl: url });
+                first = false;
               }
             },
             onError: (err: unknown, info: { kind: string }) => {
@@ -728,7 +879,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           });
           markDispatchIdle();
         },
-        onGroupMessage: async (groupId, messageId, senderPubkey, text, replyFn, media) => {
+        onGroupMessage: async (groupId, messageId, senderPubkey, text, _replyFn, media, replyToId) => {
           ctx.log?.debug(`[${account.accountId}] Group message from ${senderPubkey} in group ${groupId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
 
           const cfg = runtime.config.loadConfig();
@@ -761,6 +912,14 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             envelope: envelopeOptions,
           });
 
+          const peerKey = `group:${groupId}`;
+          const sids = messageId ? [messageId] : [];
+          if (messageId) {
+            cacheReplyContext(peerKey, [messageId], { sender: senderPubkey, body: text });
+          }
+          const cachedReply = resolveReplyContext(peerKey, replyToId);
+          const sid = messageId || `${groupId}-${Date.now()}`;
+
           const ctxPayload = runtime.channel.reply.finalizeInboundContext({
             Body: body,
             RawBody: text,
@@ -775,7 +934,13 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             SenderId: senderPubkey,
             Provider: "ndr" as const,
             Surface: "ndr" as const,
-            MessageSid: `${groupId}-${messageId || Date.now()}`,
+            MessageSid: sid,
+            MessageSids: sids.length > 0 ? sids : undefined,
+            ReplyToId: replyToId?.trim() || undefined,
+            ReplyToBody: replyToId
+              ? (cachedReply?.body ?? `(reply to message id: ${replyToId})`)
+              : undefined,
+            ReplyToSender: cachedReply?.sender,
             CommandAuthorized: true,
             OriginatingChannel: "ndr" as const,
             OriginatingTo: `ndr:group:${groupId}`,
@@ -806,15 +971,71 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             onStartError: () => {},
           });
 
+          const replyToMode = resolveNdrReplyToMode(cfg);
+          let hasRepliedRef = false;
+
           const { dispatcher, replyOptions, markDispatchIdle } = runtime.channel.reply.createReplyDispatcherWithTyping({
             responsePrefix: prefixContext.responsePrefix,
             responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
             humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
             onReplyStart: typingCallbacks.onReplyStart,
-            deliver: async (payload: { text?: string }) => {
-              const responseText = payload.text ?? "";
-              if (responseText) {
-                await replyFn(responseText);
+            deliver: async (payload: Record<string, unknown>) => {
+              const text = typeof payload.text === "string" ? payload.text : "";
+              const mediaUrls = Array.isArray(payload.mediaUrls)
+                ? payload.mediaUrls.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+                : [];
+              const mediaUrl = typeof payload.mediaUrl === "string" ? payload.mediaUrl.trim() : "";
+              const mediaList = mediaUrls.length > 0 ? mediaUrls : mediaUrl ? [mediaUrl] : [];
+
+              if (!text && mediaList.length === 0) {
+                return;
+              }
+
+              const replyRefCandidate =
+                typeof payload.replyToId === "string" && payload.replyToId.trim()
+                  ? payload.replyToId.trim()
+                  : undefined;
+              const isExplicit = Boolean(payload.replyToTag) || Boolean(payload.replyToCurrent);
+              const shouldUseReplyRef = (): string | undefined => {
+                if (!replyRefCandidate) return undefined;
+                if (replyToMode === "off") {
+                  return isExplicit ? replyRefCandidate : undefined;
+                }
+                if (replyToMode === "all") {
+                  return replyRefCandidate;
+                }
+                if (hasRepliedRef) {
+                  return undefined;
+                }
+                return replyRefCandidate;
+              };
+
+              const sendReply = async (opts: { text?: string; mediaUrl?: string }) => {
+                const replyToId = shouldUseReplyRef();
+                await sendNdrTextOrMedia({
+                  bus,
+                  to: groupId,
+                  isGroup: true,
+                  text: opts.text,
+                  mediaUrl: opts.mediaUrl,
+                  replyToId,
+                  cfg,
+                  accountId: account.accountId,
+                });
+                if (replyToMode === "first" && replyToId) {
+                  hasRepliedRef = true;
+                }
+              };
+
+              if (mediaList.length === 0) {
+                await sendReply({ text });
+                return;
+              }
+
+              let first = true;
+              for (const url of mediaList) {
+                await sendReply({ text: first ? text : undefined, mediaUrl: url });
+                first = false;
               }
             },
             onError: (err: unknown, info: { kind: string }) => {

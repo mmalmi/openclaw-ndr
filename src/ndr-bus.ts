@@ -18,11 +18,20 @@ export interface NdrBusOptions {
     messageId: string,
     senderPubkey: string,
     text: string,
-    reply: (text: string) => Promise<void>,
+    reply: (text: string, opts?: { replyToId?: string }) => Promise<void>,
     media?: NdrMessageMedia,
     messageIds?: string[],
+    replyToId?: string,
   ) => Promise<void>;
-  onGroupMessage?: (groupId: string, messageId: string, senderPubkey: string, text: string, reply: (text: string) => Promise<void>, media?: NdrMessageMedia) => Promise<void>;
+  onGroupMessage?: (
+    groupId: string,
+    messageId: string,
+    senderPubkey: string,
+    text: string,
+    reply: (text: string, opts?: { replyToId?: string }) => Promise<void>,
+    media?: NdrMessageMedia,
+    replyToId?: string,
+  ) => Promise<void>;
   onReaction?: (chatId: string, fromPubkey: string, messageId: string, emoji: string) => void;
   onGroupReaction?: (groupId: string, fromPubkey: string, messageId: string, emoji: string) => void;
   onGroupTyping?: (groupId: string, fromPubkey: string) => void;
@@ -34,8 +43,8 @@ export interface NdrBusOptions {
 }
 
 export interface NdrBusHandle {
-  sendMessage: (chatId: string, text: string) => Promise<void>;
-  sendGroupMessage: (groupId: string, text: string) => Promise<void>;
+  sendMessage: (chatId: string, text: string, opts?: { replyToId?: string }) => Promise<void>;
+  sendGroupMessage: (groupId: string, text: string, opts?: { replyToId?: string }) => Promise<void>;
   acceptGroup: (groupId: string) => Promise<void>;
   react: (chatId: string, messageId: string, emoji: string) => Promise<void>;
   reactGroup: (groupId: string, messageId: string, emoji: string) => Promise<void>;
@@ -54,6 +63,7 @@ export type ParsedNdrEvent =
       chatId: string;
       messageId: string;
       messageIds: string[];
+      replyToId?: string;
       senderPubkey: string;
       content: string;
       timestamp?: number;
@@ -75,6 +85,7 @@ export type ParsedNdrEvent =
       type: "group_message";
       groupId: string;
       messageId: string;
+      replyToId?: string;
       senderPubkey: string;
       content: string;
       timestamp?: number;
@@ -126,6 +137,29 @@ function collectMessageIds(json: Record<string, unknown>): string[] {
   return ids;
 }
 
+function readTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function collectReplyToId(json: Record<string, unknown>): string | undefined {
+  const candidates: unknown[] = [
+    json.reply_to_id,
+    json.replyToId,
+    json.reply_to,
+    json.replyTo,
+    json.reply,
+    json.reply_id,
+    json.replyId,
+  ];
+  for (const candidate of candidates) {
+    const v = readTrimmedString(candidate);
+    if (v) return v;
+  }
+  return undefined;
+}
+
 export function parseNdrEvent(line: string): ParsedNdrEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -149,11 +183,13 @@ export function parseNdrEvent(line: string): ParsedNdrEvent | null {
         if (!chatId || !senderPubkey || content === null) return null;
         const messageIds = collectMessageIds(json);
         const messageId = messageIds[0] ?? "";
+        const replyToId = collectReplyToId(json);
         return {
           type: "message",
           chatId,
           messageId,
           messageIds,
+          ...(replyToId ? { replyToId } : {}),
           senderPubkey,
           content,
           timestamp: typeof json.timestamp === "number" ? json.timestamp : undefined,
@@ -203,10 +239,12 @@ export function parseNdrEvent(line: string): ParsedNdrEvent | null {
           typeof json.message_id === "string"
             ? json.message_id
             : (typeof json.messageId === "string" ? json.messageId : (typeof json.id === "string" ? json.id : ""));
+        const replyToId = collectReplyToId(json);
         return {
           type: "group_message",
           groupId,
           messageId,
+          ...(replyToId ? { replyToId } : {}),
           senderPubkey,
           content,
           timestamp: typeof json.timestamp === "number" ? json.timestamp : undefined,
@@ -327,52 +365,112 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
         if (!parsed) continue;
 
         if (parsed.type === "message") {
-          const { chatId, messageId, messageIds, senderPubkey, content } = parsed;
+          const { chatId, messageId, messageIds, replyToId, senderPubkey, content } = parsed;
 
-          const reply = async (text: string) => {
-              await runNdrCommand(ndrPath, [...baseArgs, "send", chatId, text], ndrEnv);
-            };
+          const reply = async (text: string, opts?: { replyToId?: string }) => {
+            const args = [...baseArgs, "send"];
+            const replyRef = opts?.replyToId?.trim();
+            if (replyRef) {
+              args.push("--reply", replyRef);
+            }
+            args.push(chatId, text);
+            const result = await runNdrCommand(ndrPath, args, ndrEnv);
+            if (result.status !== "ok") {
+              throw new Error(result.error || "Failed to send message");
+            }
+          };
 
-          extractAndDownloadMedia(content).then(({ media, textContent }) => {
-            const messageMedia = media ? {
-              path: media.path,
-              mimeType: media.mimeType,
-              url: media.url,
-            } : undefined;
-            const nextContent = media ? textContent : content;
-            onMessage(chatId, messageId, senderPubkey, nextContent, reply, messageMedia, messageIds).catch((err) => {
-              onError?.(err, "message_handler");
+          extractAndDownloadMedia(content)
+            .then(({ media, textContent }) => {
+              const messageMedia = media
+                ? {
+                    path: media.path,
+                    mimeType: media.mimeType,
+                    url: media.url,
+                  }
+                : undefined;
+              const nextContent = media ? textContent : content;
+              onMessage(
+                chatId,
+                messageId,
+                senderPubkey,
+                nextContent,
+                reply,
+                messageMedia,
+                messageIds,
+                replyToId,
+              ).catch((err) => {
+                onError?.(err, "message_handler");
+              });
+            })
+            .catch(() => {
+              onMessage(
+                chatId,
+                messageId,
+                senderPubkey,
+                content,
+                reply,
+                undefined,
+                messageIds,
+                replyToId,
+              ).catch((handlerErr) => {
+                onError?.(handlerErr, "message_handler");
+              });
             });
-          }).catch((err) => {
-            onMessage(chatId, messageId, senderPubkey, content, reply, undefined, messageIds).catch((handlerErr) => {
-              onError?.(handlerErr, "message_handler");
-            });
-          });
           continue;
         }
 
         if (parsed.type === "group_message") {
-          const { groupId, messageId, senderPubkey, content } = parsed;
-          const reply = async (text: string) => {
-            await runNdrCommand(ndrPath, [...baseArgs, "group", "send", groupId, text], ndrEnv);
+          const { groupId, messageId, replyToId, senderPubkey, content } = parsed;
+          const reply = async (text: string, opts?: { replyToId?: string }) => {
+            const args = [...baseArgs, "group", "send"];
+            const replyRef = opts?.replyToId?.trim();
+            if (replyRef) {
+              args.push("--reply", replyRef);
+            }
+            args.push(groupId, text);
+            const result = await runNdrCommand(ndrPath, args, ndrEnv);
+            if (result.status !== "ok") {
+              throw new Error(result.error || "Failed to send group message");
+            }
           };
 
           if (!onGroupMessage) continue;
-          extractAndDownloadMedia(content).then(({ media, textContent }) => {
-            const messageMedia = media ? {
-              path: media.path,
-              mimeType: media.mimeType,
-              url: media.url,
-            } : undefined;
-            const nextContent = media ? textContent : content;
-            onGroupMessage(groupId, messageId, senderPubkey, nextContent, reply, messageMedia).catch((err) => {
-              onError?.(err, "group_message_handler");
+          extractAndDownloadMedia(content)
+            .then(({ media, textContent }) => {
+              const messageMedia = media
+                ? {
+                    path: media.path,
+                    mimeType: media.mimeType,
+                    url: media.url,
+                  }
+                : undefined;
+              const nextContent = media ? textContent : content;
+              onGroupMessage(
+                groupId,
+                messageId,
+                senderPubkey,
+                nextContent,
+                reply,
+                messageMedia,
+                replyToId,
+              ).catch((err) => {
+                onError?.(err, "group_message_handler");
+              });
+            })
+            .catch(() => {
+              onGroupMessage(
+                groupId,
+                messageId,
+                senderPubkey,
+                content,
+                reply,
+                undefined,
+                replyToId,
+              ).catch((handlerErr) => {
+                onError?.(handlerErr, "group_message_handler");
+              });
             });
-          }).catch((err) => {
-            onGroupMessage(groupId, messageId, senderPubkey, content, reply).catch((handlerErr) => {
-              onError?.(handlerErr, "group_message_handler");
-            });
-          });
           continue;
         }
 
@@ -430,14 +528,26 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
   startListening();
 
   return {
-    sendMessage: async (chatId: string, text: string) => {
-      const result = await runNdrCommand(ndrPath, [...baseArgs, "send", chatId, text], ndrEnv);
+    sendMessage: async (chatId: string, text: string, opts?: { replyToId?: string }) => {
+      const args = [...baseArgs, "send"];
+      const replyRef = opts?.replyToId?.trim();
+      if (replyRef) {
+        args.push("--reply", replyRef);
+      }
+      args.push(chatId, text);
+      const result = await runNdrCommand(ndrPath, args, ndrEnv);
       if (result.status !== "ok") {
         throw new Error(result.error || "Failed to send message");
       }
     },
-    sendGroupMessage: async (groupId: string, text: string) => {
-      const result = await runNdrCommand(ndrPath, [...baseArgs, "group", "send", groupId, text], ndrEnv);
+    sendGroupMessage: async (groupId: string, text: string, opts?: { replyToId?: string }) => {
+      const args = [...baseArgs, "group", "send"];
+      const replyRef = opts?.replyToId?.trim();
+      if (replyRef) {
+        args.push("--reply", replyRef);
+      }
+      args.push(groupId, text);
+      const result = await runNdrCommand(ndrPath, args, ndrEnv);
       if (result.status !== "ok") {
         throw new Error(result.error || "Failed to send group message");
       }

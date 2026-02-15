@@ -10,6 +10,14 @@ export const NdrConfigSchema = z.object({
   /** Nostr relays to connect to */
   relays: z.array(z.string()).optional(),
 
+  /**
+   * Whether outgoing bot messages should use Nostr reply references (inner rumor ["e", ...] tag).
+   * - off: never reply unless explicitly requested via reply directives/tags.
+   * - first: only the first outbound message per turn replies to the triggering inbound message.
+   * - all: every outbound message per turn replies to the triggering inbound message.
+   */
+  replyToMode: z.enum(["off", "first", "all"]).optional(),
+
   /** Whether the channel is enabled */
   enabled: z.boolean().optional(),
 
