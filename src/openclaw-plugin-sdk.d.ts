@@ -69,6 +69,21 @@ declare module "openclaw/plugin-sdk" {
     };
   }
 
+  export interface ChannelMessageActionContext {
+    action: string;
+    params: AnyRecord;
+    cfg: OpenClawConfig;
+    accountId?: string | null;
+    toolContext?: AnyRecord;
+  }
+
+  export interface ChannelMessageActionAdapter {
+    listActions?: (params: { cfg: OpenClawConfig }) => string[];
+    supportsAction?: (params: { action: string }) => boolean;
+    handleAction?: (ctx: ChannelMessageActionContext) => Promise<AnyRecord>;
+    extractToolSend?: (params: { args: AnyRecord }) => AnyRecord | null;
+  }
+
   export interface ChannelPlugin<TAccount> {
     id: string;
     meta: AnyRecord;
@@ -78,6 +93,7 @@ declare module "openclaw/plugin-sdk" {
     onboarding?: unknown;
     config: AnyRecord;
     messaging?: AnyRecord;
+    actions?: ChannelMessageActionAdapter;
     outbound: AnyRecord;
     status: AnyRecord;
     gateway: AnyRecord;

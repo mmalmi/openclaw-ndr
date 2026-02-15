@@ -29,6 +29,72 @@ function isGroupId(input: string): boolean {
   return GROUP_ID_REGEX.test(input);
 }
 
+type NdrReactionTarget =
+  | { kind: "direct"; chatId: string }
+  | { kind: "group"; groupId: string };
+
+function readStringParam(
+  params: Record<string, unknown>,
+  key: string,
+  opts?: { required?: boolean; allowEmpty?: boolean },
+): string | null {
+  const value = params[key];
+  if (typeof value !== "string") {
+    if (opts?.required) {
+      throw new Error(`NDR react requires ${key}.`);
+    }
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed && !opts?.allowEmpty) {
+    if (opts?.required) {
+      throw new Error(`NDR react requires ${key}.`);
+    }
+    return null;
+  }
+  return trimmed;
+}
+
+function readRequiredStringParam(params: Record<string, unknown>, key: string): string {
+  const value = readStringParam(params, key, { required: true });
+  if (!value) {
+    throw new Error(`NDR react requires ${key}.`);
+  }
+  return value;
+}
+
+function resolveReactionTarget(rawTarget: string): NdrReactionTarget {
+  const trimmed = rawTarget.trim();
+  if (!trimmed) {
+    throw new Error("NDR react requires target chat/group id.");
+  }
+
+  const directPrefix = "ndr:";
+  const groupPrefix = "group:";
+  const ndrGroupPrefix = "ndr:group:";
+  let normalized = trimmed;
+  let forceGroup = false;
+
+  if (normalized.toLowerCase().startsWith(ndrGroupPrefix)) {
+    normalized = normalized.slice(ndrGroupPrefix.length).trim();
+    forceGroup = true;
+  } else if (normalized.toLowerCase().startsWith(groupPrefix)) {
+    normalized = normalized.slice(groupPrefix.length).trim();
+    forceGroup = true;
+  } else if (normalized.toLowerCase().startsWith(directPrefix)) {
+    normalized = normalized.slice(directPrefix.length).trim();
+  }
+
+  if (!normalized) {
+    throw new Error("NDR react requires target chat/group id.");
+  }
+
+  if (forceGroup || isGroupId(normalized)) {
+    return { kind: "group", groupId: normalized };
+  }
+  return { kind: "direct", chatId: normalized };
+}
+
 const seenGroupInvites = new Map<string, Set<string>>();
 
 function markGroupInviteSeen(accountId: string, groupId: string): boolean {
@@ -189,6 +255,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   },
   capabilities: {
     chatTypes: ["direct", "group"],
+    reactions: true,
     media: true, // Supports nhash media via htree
   },
   reload: {
@@ -237,6 +304,72 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         return /^[0-9a-fA-F]{8}$/.test(trimmed) || isGroupId(trimmed) || trimmed.startsWith("npub1");
       },
       hint: "<chat_id|group_id|npub>",
+    },
+  },
+  actions: {
+    listActions: ({ cfg }: { cfg: OpenClawConfig }) => {
+      const accountId = resolveDefaultNdrAccountId(cfg);
+      if (!accountId) {
+        return [];
+      }
+      return ["send", "react"];
+    },
+    supportsAction: ({ action }: { action: string }) => action === "react",
+    handleAction: async ({
+      action,
+      params,
+      accountId,
+      cfg,
+    }: {
+      action: string;
+      params: Record<string, unknown>;
+      accountId?: string | null;
+      cfg: OpenClawConfig;
+    }) => {
+      if (action !== "react") {
+        throw new Error(`Action ${action} is not supported for provider ndr.`);
+      }
+      const aid =
+        accountId ??
+        readStringParam(params, "accountId") ??
+        resolveDefaultNdrAccountId(cfg) ??
+        DEFAULT_ACCOUNT_ID;
+      const bus = activeBuses.get(aid);
+      if (!bus) {
+        throw new Error(`NDR bus not running for account ${aid}`);
+      }
+
+      const target =
+        readStringParam(params, "to") ??
+        readStringParam(params, "target") ??
+        readStringParam(params, "chatId") ??
+        readStringParam(params, "groupId");
+      if (!target) {
+        throw new Error("NDR react requires to/target/chatId/groupId.");
+      }
+
+      const remove = params.remove === true;
+      if (remove) {
+        throw new Error("NDR reaction removal is not supported by ndr CLI.");
+      }
+
+      const messageId = readRequiredStringParam(params, "messageId");
+      const emoji = readRequiredStringParam(params, "emoji");
+      const resolvedTarget = resolveReactionTarget(target);
+
+      if (resolvedTarget.kind === "group") {
+        await bus.reactGroup(resolvedTarget.groupId, messageId, emoji);
+      } else {
+        await bus.react(resolvedTarget.chatId, messageId, emoji);
+      }
+
+      return {
+        ok: true,
+        action: "react",
+        added: emoji,
+        target:
+          resolvedTarget.kind === "group" ? `group:${resolvedTarget.groupId}` : resolvedTarget.chatId,
+      };
     },
   },
 
@@ -415,6 +548,22 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           runtime.system.enqueueSystemEvent(text, {
             sessionKey: route.sessionKey,
             contextKey: `ndr:reaction:add:${chatId}:${messageId}:${fromPubkey}:${emoji}`,
+          });
+          ctx.log?.debug(`[${account.accountId}] ${text}`);
+        },
+        onGroupReaction: (groupId, fromPubkey, messageId, emoji) => {
+          const cfg = runtime.config.loadConfig();
+          const route = runtime.channel.routing.resolveAgentRoute({
+            cfg,
+            channel: "ndr",
+            accountId: account.accountId,
+            peer: { kind: "group", id: groupId },
+          });
+          const label = fromPubkey.slice(0, 8);
+          const text = `NDR group reaction: ${emoji} by ${label} on msg ${messageId}`;
+          runtime.system.enqueueSystemEvent(text, {
+            sessionKey: route.sessionKey,
+            contextKey: `ndr:group-reaction:add:${groupId}:${messageId}:${fromPubkey}:${emoji}`,
           });
           ctx.log?.debug(`[${account.accountId}] ${text}`);
         },

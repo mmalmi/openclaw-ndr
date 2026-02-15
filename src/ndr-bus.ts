@@ -30,6 +30,7 @@ export interface NdrBusHandle {
   sendGroupMessage: (groupId: string, text: string) => Promise<void>;
   acceptGroup: (groupId: string) => Promise<void>;
   react: (chatId: string, messageId: string, emoji: string) => Promise<void>;
+  reactGroup: (groupId: string, messageId: string, emoji: string) => Promise<void>;
   sendReceipt: (chatId: string, receiptType: 'delivered' | 'seen', messageIds: string[]) => Promise<void>;
   sendTyping: (chatId: string) => Promise<void>;
   createInvite: () => Promise<{ inviteUrl: string; inviteId: string }>;
@@ -418,6 +419,16 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
       const result = await runNdrCommand(ndrPath, [...baseArgs, "react", chatId, messageId, emoji], ndrEnv);
       if (result.status !== "ok") {
         throw new Error(result.error || "Failed to send reaction");
+      }
+    },
+    reactGroup: async (groupId: string, messageId: string, emoji: string) => {
+      const result = await runNdrCommand(
+        ndrPath,
+        [...baseArgs, "group", "react", groupId, messageId, emoji],
+        ndrEnv,
+      );
+      if (result.status !== "ok") {
+        throw new Error(result.error || "Failed to send group reaction");
       }
     },
 
