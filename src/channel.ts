@@ -70,7 +70,6 @@ export function withOwnerPubkeyLocked(cfg: OpenClawConfig, ownerPubkey: string):
       ...channels,
       ndr: {
         ...ndrSection,
-        enabled: true,
         ownerPubkey: normalized,
       },
     },
@@ -192,7 +191,19 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
     chatTypes: ["direct", "group"],
     media: true, // Supports nhash media via htree
   },
-  reload: { configPrefixes: ["channels.ndr"] },
+  reload: {
+    configPrefixes: [
+      "channels.ndr.relays",
+      "channels.ndr.enabled",
+      "channels.ndr.name",
+      "channels.ndr.ndrPath",
+      "channels.ndr.dataDir",
+      "channels.ndr.groupPolicy",
+      "channels.ndr.groupAllowFrom",
+      "channels.ndr.groups",
+    ],
+    noopPrefixes: ["channels.ndr.ownerPubkey"],
+  },
   configSchema: buildChannelConfigSchema(NdrConfigSchema),
   onboarding: ndrOnboardingAdapter,
 
