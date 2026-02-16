@@ -131,6 +131,9 @@ async function sendNdrTextOrMedia(params: {
 }
 
 const GROUP_ID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const DIRECT_PREFIX = "ndr:";
+const GROUP_PREFIX = "group:";
+const NDR_GROUP_PREFIX = "ndr:group:";
 
 function isGroupId(input: string): boolean {
   return GROUP_ID_REGEX.test(input);
@@ -139,6 +142,33 @@ function isGroupId(input: string): boolean {
 type NdrReactionTarget =
   | { kind: "direct"; chatId: string }
   | { kind: "group"; groupId: string };
+
+function normalizeNdrTarget(rawTarget: string, errMessage: string): { normalized: string; forceGroup: boolean } {
+  const trimmed = rawTarget.trim();
+  if (!trimmed) {
+    throw new Error(errMessage);
+  }
+
+  let normalized = trimmed;
+  let forceGroup = false;
+  const lowered = normalized.toLowerCase();
+
+  if (lowered.startsWith(NDR_GROUP_PREFIX)) {
+    normalized = normalized.slice(NDR_GROUP_PREFIX.length).trim();
+    forceGroup = true;
+  } else if (lowered.startsWith(GROUP_PREFIX)) {
+    normalized = normalized.slice(GROUP_PREFIX.length).trim();
+    forceGroup = true;
+  } else if (lowered.startsWith(DIRECT_PREFIX)) {
+    normalized = normalized.slice(DIRECT_PREFIX.length).trim();
+  }
+
+  if (!normalized) {
+    throw new Error(errMessage);
+  }
+
+  return { normalized, forceGroup };
+}
 
 function readStringParam(
   params: Record<string, unknown>,
@@ -171,30 +201,7 @@ function readRequiredStringParam(params: Record<string, unknown>, key: string): 
 }
 
 function resolveReactionTarget(rawTarget: string): NdrReactionTarget {
-  const trimmed = rawTarget.trim();
-  if (!trimmed) {
-    throw new Error("NDR react requires target chat/group id.");
-  }
-
-  const directPrefix = "ndr:";
-  const groupPrefix = "group:";
-  const ndrGroupPrefix = "ndr:group:";
-  let normalized = trimmed;
-  let forceGroup = false;
-
-  if (normalized.toLowerCase().startsWith(ndrGroupPrefix)) {
-    normalized = normalized.slice(ndrGroupPrefix.length).trim();
-    forceGroup = true;
-  } else if (normalized.toLowerCase().startsWith(groupPrefix)) {
-    normalized = normalized.slice(groupPrefix.length).trim();
-    forceGroup = true;
-  } else if (normalized.toLowerCase().startsWith(directPrefix)) {
-    normalized = normalized.slice(directPrefix.length).trim();
-  }
-
-  if (!normalized) {
-    throw new Error("NDR react requires target chat/group id.");
-  }
+  const { normalized, forceGroup } = normalizeNdrTarget(rawTarget, "NDR react requires target chat/group id.");
 
   if (forceGroup || isGroupId(normalized)) {
     return { kind: "group", groupId: normalized };
@@ -492,17 +499,18 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
       const cfg = core.config.loadConfig();
-      const isGroup = isGroupId(params.to);
+      const { normalized: to, forceGroup } = normalizeNdrTarget(params.to, "NDR send requires target chat/group id.");
+      const isGroup = forceGroup || isGroupId(to);
       await sendNdrTextOrMedia({
         bus,
-        to: params.to,
+        to,
         isGroup,
         text: params.text,
         replyToId: params.replyToId,
         cfg,
         accountId: aid,
       });
-      return { channel: "openclaw-ndr", to: params.to };
+      return { channel: "openclaw-ndr", to };
     },
     sendMedia: async (params: { to: string; text?: string; mediaUrl?: string; accountId?: string; replyToId?: string }) => {
       const core = getNdrRuntime();
@@ -512,10 +520,11 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
       const cfg = core.config.loadConfig();
-      const isGroup = isGroupId(params.to);
+      const { normalized: to, forceGroup } = normalizeNdrTarget(params.to, "NDR send requires target chat/group id.");
+      const isGroup = forceGroup || isGroupId(to);
       await sendNdrTextOrMedia({
         bus,
-        to: params.to,
+        to,
         isGroup,
         text: params.text,
         mediaUrl: params.mediaUrl,
@@ -523,7 +532,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         cfg,
         accountId: aid,
       });
-      return { channel: "openclaw-ndr", to: params.to };
+      return { channel: "openclaw-ndr", to };
     },
   },
 
