@@ -114,7 +114,7 @@ async function sendNdrTextOrMedia(params: {
 
   if (!params.mediaUrl) {
     if (params.isGroup) {
-      await params.bus.sendGroupMessage(params.to, caption, { replyToId });
+      await sendGroupMessageWithRetry(params.bus, params.to, caption, { replyToId });
     } else {
       await params.bus.sendMessage(params.to, caption, { replyToId });
     }
@@ -124,7 +124,7 @@ async function sendNdrTextOrMedia(params: {
   const mediaLink = await resolveNdrMediaLink(params.mediaUrl);
   const message = caption ? `${caption}\n${mediaLink}` : mediaLink;
   if (params.isGroup) {
-    await params.bus.sendGroupMessage(params.to, message, { replyToId });
+    await sendGroupMessageWithRetry(params.bus, params.to, message, { replyToId });
   } else {
     await params.bus.sendMessage(params.to, message, { replyToId });
   }
@@ -212,9 +212,38 @@ function resolveReactionTarget(rawTarget: string): NdrReactionTarget {
 const seenGroupInvites = new Map<string, Set<string>>();
 const GROUP_ACCEPT_MAX_ATTEMPTS = 5;
 const GROUP_ACCEPT_RETRY_BASE_MS = 200;
+const GROUP_SEND_MAX_ATTEMPTS = 5;
+const GROUP_SEND_RETRY_BASE_MS = 200;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableGroupSendError(err: unknown): boolean {
+  const text = String(err ?? "");
+  return /group not found/i.test(text);
+}
+
+async function sendGroupMessageWithRetry(
+  bus: NdrBusHandle,
+  groupId: string,
+  message: string,
+  opts: { replyToId?: string },
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= GROUP_SEND_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await bus.sendGroupMessage(groupId, message, opts);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableGroupSendError(err) || attempt >= GROUP_SEND_MAX_ATTEMPTS) {
+        break;
+      }
+      await sleep(GROUP_SEND_RETRY_BASE_MS * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 function hasSeenGroupInvite(accountId: string, groupId: string): boolean {
@@ -410,6 +439,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       "channels.openclaw-ndr.groupPolicy",
       "channels.openclaw-ndr.groupAllowFrom",
       "channels.openclaw-ndr.groups",
+      "channels.openclaw-ndr.groupSendSessionFanout",
     ],
     noopPrefixes: ["channels.openclaw-ndr.ownerPubkey"],
   },
@@ -657,6 +687,10 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         relays: account.relays,
         ndrPath: account.ndrPath,
         dataDir: account.dataDir,
+        extraEnv: {
+          NDR_GROUP_SEND_SESSION_FANOUT:
+            account.config.groupSendSessionFanout === false ? "0" : "1",
+        },
         onNewSession: async (newChatId, theirPubkey) => {
           await ensureOwnerLocked(theirPubkey, "session_created", newChatId);
         },

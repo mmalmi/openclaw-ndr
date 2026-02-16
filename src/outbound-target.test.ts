@@ -116,4 +116,41 @@ describe("ndr outbound target routing", () => {
 
     runtime.stop();
   });
+
+  it("retries group sends when ndr reports group not found", async () => {
+    const { ndrPlugin, cfg, mockBus } = await setupPlugin();
+
+    mockBus.sendGroupMessage
+      .mockRejectedValueOnce(new Error('{"status":"error","command":"","error":"Group not found: g"}'))
+      .mockResolvedValue(undefined);
+
+    const account = ndrPlugin.config.resolveAccount(cfg, "default");
+    const runtime = await ndrPlugin.gateway.startAccount({
+      account,
+      setStatus: vi.fn(),
+      log: createLogger(),
+    });
+
+    await ndrPlugin.outbound.sendText({
+      to: "ndr:group:11111111-1111-1111-1111-111111111111",
+      text: "hello group",
+      accountId: "default",
+    });
+
+    expect(mockBus.sendGroupMessage).toHaveBeenCalledTimes(2);
+    expect(mockBus.sendGroupMessage).toHaveBeenNthCalledWith(
+      1,
+      "11111111-1111-1111-1111-111111111111",
+      "hello group",
+      { replyToId: undefined },
+    );
+    expect(mockBus.sendGroupMessage).toHaveBeenNthCalledWith(
+      2,
+      "11111111-1111-1111-1111-111111111111",
+      "hello group",
+      { replyToId: undefined },
+    );
+
+    runtime.stop();
+  });
 });

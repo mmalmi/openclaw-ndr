@@ -13,6 +13,7 @@ export interface NdrBusOptions {
   relays: string[];
   ndrPath: string;
   dataDir: string | null;
+  extraEnv?: Record<string, string | undefined>;
   onMessage: (
     chatId: string,
     messageId: string,
@@ -309,6 +310,7 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
     relays,
     ndrPath,
     dataDir,
+    extraEnv,
     onMessage,
     onGroupMessage,
     onReaction,
@@ -323,6 +325,7 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
 
   let listenProcess: ChildProcess | null = null;
   let running = false;
+  let listenStdoutBuffer = "";
 
   // Build common args
   const baseArgs: string[] = ["--json"];
@@ -335,6 +338,7 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
   const ndrEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...(relays.length ? { NOSTR_RELAYS: relays.join(",") } : {}),
+    ...(extraEnv ?? {}),
   };
 
   const ensureIdentity = async () => {
@@ -358,149 +362,162 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
       env: ndrEnv,
     });
 
-    listenProcess.stdout?.on("data", (data: Buffer) => {
-      const lines = data.toString().split("\n").filter(Boolean);
-      for (const line of lines) {
-        const parsed = parseNdrEvent(line);
-        if (!parsed) continue;
+    const handleParsedLine = (line: string) => {
+      const parsed = parseNdrEvent(line);
+      if (!parsed) return;
 
-        if (parsed.type === "message") {
-          const { chatId, messageId, messageIds, replyToId, senderPubkey, content } = parsed;
+      if (parsed.type === "message") {
+        const { chatId, messageId, messageIds, replyToId, senderPubkey, content } = parsed;
 
-          const reply = async (text: string, opts?: { replyToId?: string }) => {
-            const args = [...baseArgs, "send"];
-            const replyRef = opts?.replyToId?.trim();
-            if (replyRef) {
-              args.push("--reply", replyRef);
-            }
-            args.push(chatId, text);
-            const result = await runNdrCommand(ndrPath, args, ndrEnv);
-            if (result.status !== "ok") {
-              throw new Error(result.error || "Failed to send message");
-            }
-          };
+        const reply = async (text: string, opts?: { replyToId?: string }) => {
+          const args = [...baseArgs, "send"];
+          const replyRef = opts?.replyToId?.trim();
+          if (replyRef) {
+            args.push("--reply", replyRef);
+          }
+          args.push(chatId, text);
+          const result = await runNdrCommand(ndrPath, args, ndrEnv);
+          if (result.status !== "ok") {
+            throw new Error(result.error || "Failed to send message");
+          }
+        };
 
-          extractAndDownloadMedia(content)
-            .then(({ media, textContent }) => {
-              const messageMedia = media
-                ? {
-                    path: media.path,
-                    mimeType: media.mimeType,
-                    url: media.url,
-                  }
-                : undefined;
-              const nextContent = media ? textContent : content;
-              onMessage(
-                chatId,
-                messageId,
-                senderPubkey,
-                nextContent,
-                reply,
-                messageMedia,
-                messageIds,
-                replyToId,
-              ).catch((err) => {
-                onError?.(err, "message_handler");
-              });
-            })
-            .catch(() => {
-              onMessage(
-                chatId,
-                messageId,
-                senderPubkey,
-                content,
-                reply,
-                undefined,
-                messageIds,
-                replyToId,
-              ).catch((handlerErr) => {
-                onError?.(handlerErr, "message_handler");
-              });
+        extractAndDownloadMedia(content)
+          .then(({ media, textContent }) => {
+            const messageMedia = media
+              ? {
+                  path: media.path,
+                  mimeType: media.mimeType,
+                  url: media.url,
+                }
+              : undefined;
+            const nextContent = media ? textContent : content;
+            onMessage(
+              chatId,
+              messageId,
+              senderPubkey,
+              nextContent,
+              reply,
+              messageMedia,
+              messageIds,
+              replyToId,
+            ).catch((err) => {
+              onError?.(err, "message_handler");
             });
-          continue;
-        }
-
-        if (parsed.type === "group_message") {
-          const { groupId, messageId, replyToId, senderPubkey, content } = parsed;
-          const reply = async (text: string, opts?: { replyToId?: string }) => {
-            const args = [...baseArgs, "group", "send"];
-            const replyRef = opts?.replyToId?.trim();
-            if (replyRef) {
-              args.push("--reply", replyRef);
-            }
-            args.push(groupId, text);
-            const result = await runNdrCommand(ndrPath, args, ndrEnv);
-            if (result.status !== "ok") {
-              throw new Error(result.error || "Failed to send group message");
-            }
-          };
-
-          if (!onGroupMessage) continue;
-          extractAndDownloadMedia(content)
-            .then(({ media, textContent }) => {
-              const messageMedia = media
-                ? {
-                    path: media.path,
-                    mimeType: media.mimeType,
-                    url: media.url,
-                  }
-                : undefined;
-              const nextContent = media ? textContent : content;
-              onGroupMessage(
-                groupId,
-                messageId,
-                senderPubkey,
-                nextContent,
-                reply,
-                messageMedia,
-                replyToId,
-              ).catch((err) => {
-                onError?.(err, "group_message_handler");
-              });
-            })
-            .catch(() => {
-              onGroupMessage(
-                groupId,
-                messageId,
-                senderPubkey,
-                content,
-                reply,
-                undefined,
-                replyToId,
-              ).catch((handlerErr) => {
-                onError?.(handlerErr, "group_message_handler");
-              });
+          })
+          .catch(() => {
+            onMessage(
+              chatId,
+              messageId,
+              senderPubkey,
+              content,
+              reply,
+              undefined,
+              messageIds,
+              replyToId,
+            ).catch((handlerErr) => {
+              onError?.(handlerErr, "message_handler");
             });
-          continue;
-        }
-
-        if (parsed.type === "reaction") {
-          onReaction?.(parsed.chatId, parsed.fromPubkey, parsed.messageId, parsed.emoji);
-          continue;
-        }
-
-        if (parsed.type === "group_reaction") {
-          onGroupReaction?.(parsed.groupId, parsed.fromPubkey, parsed.messageId, parsed.emoji);
-          continue;
-        }
-
-        if (parsed.type === "group_typing") {
-          onGroupTyping?.(parsed.groupId, parsed.fromPubkey);
-          continue;
-        }
-
-        if (parsed.type === "group_metadata") {
-          onGroupMetadata?.(parsed.groupId, parsed.action, parsed.senderPubkey);
-          continue;
-        }
-
-        if (parsed.type === "session_created") {
-          onNewSession?.(parsed.chatId, parsed.theirPubkey).catch((err) => {
-            onError?.(err, "new_session_handler");
           });
-          continue;
-        }
+        return;
       }
+
+      if (parsed.type === "group_message") {
+        const { groupId, messageId, replyToId, senderPubkey, content } = parsed;
+        const reply = async (text: string, opts?: { replyToId?: string }) => {
+          const args = [...baseArgs, "group", "send"];
+          const replyRef = opts?.replyToId?.trim();
+          if (replyRef) {
+            args.push("--reply", replyRef);
+          }
+          args.push(groupId, text);
+          const result = await runNdrCommand(ndrPath, args, ndrEnv);
+          if (result.status !== "ok") {
+            throw new Error(result.error || "Failed to send group message");
+          }
+        };
+
+        if (!onGroupMessage) return;
+        extractAndDownloadMedia(content)
+          .then(({ media, textContent }) => {
+            const messageMedia = media
+              ? {
+                  path: media.path,
+                  mimeType: media.mimeType,
+                  url: media.url,
+                }
+              : undefined;
+            const nextContent = media ? textContent : content;
+            onGroupMessage(
+              groupId,
+              messageId,
+              senderPubkey,
+              nextContent,
+              reply,
+              messageMedia,
+              replyToId,
+            ).catch((err) => {
+              onError?.(err, "group_message_handler");
+            });
+          })
+          .catch(() => {
+            onGroupMessage(
+              groupId,
+              messageId,
+              senderPubkey,
+              content,
+              reply,
+              undefined,
+              replyToId,
+            ).catch((handlerErr) => {
+              onError?.(handlerErr, "group_message_handler");
+            });
+          });
+        return;
+      }
+
+      if (parsed.type === "reaction") {
+        onReaction?.(parsed.chatId, parsed.fromPubkey, parsed.messageId, parsed.emoji);
+        return;
+      }
+
+      if (parsed.type === "group_reaction") {
+        onGroupReaction?.(parsed.groupId, parsed.fromPubkey, parsed.messageId, parsed.emoji);
+        return;
+      }
+
+      if (parsed.type === "group_typing") {
+        onGroupTyping?.(parsed.groupId, parsed.fromPubkey);
+        return;
+      }
+
+      if (parsed.type === "group_metadata") {
+        onGroupMetadata?.(parsed.groupId, parsed.action, parsed.senderPubkey);
+        return;
+      }
+
+      if (parsed.type === "session_created") {
+        onNewSession?.(parsed.chatId, parsed.theirPubkey).catch((err) => {
+          onError?.(err, "new_session_handler");
+        });
+      }
+    };
+
+    listenProcess.stdout?.on("data", (data: Buffer) => {
+      listenStdoutBuffer += data.toString();
+      const lines = listenStdoutBuffer.split("\n");
+      listenStdoutBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        handleParsedLine(line);
+      }
+    });
+
+    listenProcess.on("close", () => {
+      const tail = listenStdoutBuffer.trim();
+      if (!tail) return;
+      listenStdoutBuffer = "";
+      handleParsedLine(tail);
     });
 
     listenProcess.stderr?.on("data", (data: Buffer) => {

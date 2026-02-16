@@ -14,12 +14,14 @@ const configPath = `${stateDir}/openclaw.json`;
 const ndrDataDir = `${stateDir}/ndr-data`;
 const relayUrl = String(process.env.RELAY_URL || "wss://temp.iris.to").trim();
 const gatewayToken = String(process.env.OPENCLAW_GATEWAY_TOKEN || "testtoken").trim();
+const e2eModel = String(process.env.OPENCLAW_E2E_MODEL || "openai-codex/gpt-5.3-codex").trim();
 
 const openclawEnv = {
   ...process.env,
   OPENCLAW_STATE_DIR: stateDir,
   OPENCLAW_CONFIG_PATH: configPath,
   OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+  OPENCLAW_LOG_LEVEL: process.env.OPENCLAW_LOG_LEVEL || "debug",
 };
 
 function ensureDir(dir) {
@@ -84,6 +86,37 @@ function mergeRuntimeConfig() {
   const cfg = fs.existsSync(configPath) ? readJson(configPath) : {};
   const next = {
     ...cfg,
+    auth: {
+      ...(cfg.auth && typeof cfg.auth === "object" ? cfg.auth : {}),
+      profiles: {
+        ...((cfg.auth && typeof cfg.auth === "object" && cfg.auth.profiles && typeof cfg.auth.profiles === "object")
+          ? cfg.auth.profiles
+          : {}),
+        "openai-codex:default": {
+          provider: "openai-codex",
+          mode: "oauth",
+        },
+      },
+    },
+    agents: {
+      ...(cfg.agents && typeof cfg.agents === "object" ? cfg.agents : {}),
+      defaults: {
+        ...((cfg.agents && typeof cfg.agents === "object" && cfg.agents.defaults && typeof cfg.agents.defaults === "object")
+          ? cfg.agents.defaults
+          : {}),
+        model: {
+          ...((cfg.agents &&
+              typeof cfg.agents === "object" &&
+              cfg.agents.defaults &&
+              typeof cfg.agents.defaults === "object" &&
+              cfg.agents.defaults.model &&
+              typeof cfg.agents.defaults.model === "object")
+            ? cfg.agents.defaults.model
+            : {}),
+          primary: e2eModel,
+        },
+      },
+    },
     gateway: {
       ...(cfg.gateway && typeof cfg.gateway === "object" ? cfg.gateway : {}),
       mode: "local",
