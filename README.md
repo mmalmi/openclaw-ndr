@@ -10,7 +10,7 @@ Compatible with [chat.iris.to](https://chat.iris.to).
 - **Double ratchet encryption** - Based on Signal's proven protocol
 - **Nostr transport** - Messages sent via Nostr relays
 - **Interactive onboarding** - `openclaw onboard` walks you through setup
-- **Group chats** - NDR group fan-out with shared-channel invites
+- **Group chats** - Native NDR group transport with shared-channel invites
 
 ## Prerequisites
 
@@ -191,7 +191,7 @@ ndr group send <group_id> "hello"
 2. **Receiving** - Decrypts messages using the double ratchet session
 3. **Sending** - Uses `ndr send` to encrypt and publish messages
 4. **Session management** - ndr handles key rotation automatically
-5. **Groups** - `ndr group` fan-out with shared-channel invites
+5. **Groups** - Native `ndr group` transport with shared-channel invites
 
 ## Security
 

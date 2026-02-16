@@ -444,7 +444,6 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
       "channels.openclaw-ndr.groupPolicy",
       "channels.openclaw-ndr.groupAllowFrom",
       "channels.openclaw-ndr.groups",
-      "channels.openclaw-ndr.groupSendSessionFanout",
     ],
     noopPrefixes: ["channels.openclaw-ndr.ownerPubkey"],
   },
@@ -692,10 +691,6 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         relays: account.relays,
         ndrPath: account.ndrPath,
         dataDir: account.dataDir,
-        extraEnv: {
-          NDR_GROUP_SEND_SESSION_FANOUT:
-            account.config.groupSendSessionFanout === false ? "0" : "1",
-        },
         onNewSession: async (newChatId, theirPubkey) => {
           await ensureOwnerLocked(theirPubkey, "session_created", newChatId);
         },

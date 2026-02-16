@@ -13,7 +13,6 @@ KEEP_CONTAINER="${KEEP_CONTAINER:-0}"
 SETUP_TIMEOUT_SEC="${SETUP_TIMEOUT_SEC:-240}"
 PLAYWRIGHT_PORT="${PLAYWRIGHT_PORT:-45176}"
 OPENCLAW_E2E_MODEL="${OPENCLAW_E2E_MODEL:-openai-codex/gpt-5.3-codex}"
-NDR_GROUP_SEND_SESSION_FANOUT="${NDR_GROUP_SEND_SESSION_FANOUT:-0}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -139,7 +138,6 @@ container_id="$(
     -e RELAY_URL="$RELAY_URL" \
     -e OPENCLAW_GATEWAY_TOKEN="testtoken" \
     -e OPENCLAW_E2E_MODEL="$OPENCLAW_E2E_MODEL" \
-    -e NDR_GROUP_SEND_SESSION_FANOUT="$NDR_GROUP_SEND_SESSION_FANOUT" \
     -v "$work/shared:/shared" \
     "${docker_auth_mount[@]}" \
     "$image_tag"

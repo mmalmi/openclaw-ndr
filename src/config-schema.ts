@@ -39,8 +39,6 @@ export const NdrConfigSchema = z.object({
   /** Allowlist of group IDs (UUIDs). When set, only listed groups are handled. */
   groups: z.array(z.string()).optional(),
 
-  /** Send group messages via 1:1 session fan-out for Iris compatibility (default: true). */
-  groupSendSessionFanout: z.boolean().optional(),
 });
 
 export type NdrConfig = z.infer<typeof NdrConfigSchema>;
