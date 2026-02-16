@@ -210,6 +210,16 @@ function resolveReactionTarget(rawTarget: string): NdrReactionTarget {
 }
 
 const seenGroupInvites = new Map<string, Set<string>>();
+const GROUP_ACCEPT_MAX_ATTEMPTS = 5;
+const GROUP_ACCEPT_RETRY_BASE_MS = 200;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasSeenGroupInvite(accountId: string, groupId: string): boolean {
+  return seenGroupInvites.get(accountId)?.has(groupId) === true;
+}
 
 function markGroupInviteSeen(accountId: string, groupId: string): boolean {
   let seen = seenGroupInvites.get(accountId);
@@ -220,6 +230,23 @@ function markGroupInviteSeen(accountId: string, groupId: string): boolean {
   if (seen.has(groupId)) return true;
   seen.add(groupId);
   return false;
+}
+
+async function acceptGroupInviteWithRetry(bus: NdrBusHandle, groupId: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= GROUP_ACCEPT_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await bus.acceptGroup(groupId);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt >= GROUP_ACCEPT_MAX_ATTEMPTS) {
+        break;
+      }
+      await sleep(GROUP_ACCEPT_RETRY_BASE_MS * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 function normalizePubkeySafe(input?: string | null): string | null {
@@ -1067,14 +1094,15 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         },
         onGroupMetadata: async (groupId, action, senderPubkey) => {
           if (action !== "created") return;
-          if (markGroupInviteSeen(account.accountId, groupId)) return;
 
           const owner = ownerPubkey;
           const senderLabel = senderPubkey ? `${senderPubkey.slice(0, 16)}...` : "unknown sender";
 
           if (shouldAutoAcceptGroupInvite(owner, senderPubkey)) {
+            if (hasSeenGroupInvite(account.accountId, groupId)) return;
             try {
-              await bus.acceptGroup(groupId);
+              await acceptGroupInviteWithRetry(bus, groupId);
+              markGroupInviteSeen(account.accountId, groupId);
               ctx.log?.info(`[${account.accountId}] Auto-accepted group invite ${groupId} from owner`);
             } catch (err) {
               ctx.log?.warn(
@@ -1083,6 +1111,8 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             }
             return;
           }
+
+          if (markGroupInviteSeen(account.accountId, groupId)) return;
 
           if (!owner) {
             ctx.log?.info(
