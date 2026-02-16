@@ -36,13 +36,13 @@ function createPrompter() {
 
 function hasNdrConfig(cfg: OpenClawConfig): boolean {
   const channels = (cfg.channels ?? {}) as Record<string, unknown>;
-  const ndr = channels.ndr;
+  const ndr = channels["openclaw-ndr"];
   return Boolean(ndr && typeof ndr === "object");
 }
 
 function ndrEnabled(cfg: OpenClawConfig): boolean {
   const channels = (cfg.channels ?? {}) as Record<string, unknown>;
-  const ndr = channels.ndr as Record<string, unknown> | undefined;
+  const ndr = channels["openclaw-ndr"] as Record<string, unknown> | undefined;
   return Boolean(ndr && ndr.enabled !== false);
 }
 
@@ -51,7 +51,7 @@ describe("ndr onboarding persistence", () => {
     vi.clearAllMocks();
   });
 
-  it("persists channels.ndr when ndr binary is missing", async () => {
+  it("persists channels.openclaw-ndr when ndr binary is missing", async () => {
     const child = await import("child_process");
     const execSyncMock = vi.mocked(child.execSync);
     execSyncMock.mockImplementation(() => {
@@ -69,7 +69,7 @@ describe("ndr onboarding persistence", () => {
     expect(vi.mocked(startNdrBus)).not.toHaveBeenCalled();
   });
 
-  it("persists channels.ndr when pairing times out", async () => {
+  it("persists channels.openclaw-ndr when pairing times out", async () => {
     const child = await import("child_process");
     const execSyncMock = vi.mocked(child.execSync);
     execSyncMock.mockImplementation((command: string | Buffer | URL) => {

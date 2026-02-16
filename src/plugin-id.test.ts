@@ -21,11 +21,11 @@ describe("plugin id consistency", () => {
     expect(openclaw.id).toBe("openclaw-ndr");
   });
 
-  it("keeps channel id as ndr", () => {
+  it("keeps channel id as openclaw-ndr", () => {
     const root = path.resolve(import.meta.dirname, "..");
     const manifest = readJson(path.join(root, "openclaw.plugin.json"));
     const channels = Array.isArray(manifest.channels) ? manifest.channels : [];
 
-    expect(channels).toContain("ndr");
+    expect(channels).toContain("openclaw-ndr");
   });
 });

@@ -3,7 +3,7 @@ import { ndrPlugin } from "./channel.js";
 
 describe("ndr reload policy", () => {
   it("treats ownerPubkey updates as dynamic and non-restarting", () => {
-    const ownerPath = "channels.ndr.ownerPubkey";
+    const ownerPath = "channels.openclaw-ndr.ownerPubkey";
     const configPrefixes = ndrPlugin.reload?.configPrefixes ?? [];
     const noopPrefixes = ndrPlugin.reload?.noopPrefixes ?? [];
 

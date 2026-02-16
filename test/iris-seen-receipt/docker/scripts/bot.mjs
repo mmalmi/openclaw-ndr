@@ -105,9 +105,12 @@ function mergeRuntimeConfig() {
     },
     channels: {
       ...(cfg.channels && typeof cfg.channels === "object" ? cfg.channels : {}),
-      ndr: {
-        ...((cfg.channels && typeof cfg.channels === "object" && cfg.channels.ndr && typeof cfg.channels.ndr === "object")
-          ? cfg.channels.ndr
+      "openclaw-ndr": {
+        ...((cfg.channels &&
+            typeof cfg.channels === "object" &&
+            (cfg.channels)["openclaw-ndr"] &&
+            typeof (cfg.channels)["openclaw-ndr"] === "object")
+          ? (cfg.channels)["openclaw-ndr"]
           : {}),
         enabled: true,
         relays: [relayUrl],

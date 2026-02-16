@@ -25,7 +25,7 @@ type SetupResult = {
 async function setupPlugin(): Promise<SetupResult> {
   const cfg = {
     channels: {
-      ndr: {
+      "openclaw-ndr": {
         enabled: true,
       },
     },
