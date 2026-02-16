@@ -61,7 +61,7 @@ function resolveReplyContext(peerKey: string, replyToId?: string): ReplyContextE
 type ReplyToMode = "off" | "first" | "all";
 
 function resolveNdrReplyToMode(cfg: OpenClawConfig): ReplyToMode {
-  const raw = (cfg.channels as Record<string, unknown> | undefined)?.ndr as
+  const raw = (cfg.channels as Record<string, unknown> | undefined)?.["openclaw-ndr"] as
     | Record<string, unknown>
     | undefined;
   const mode = raw?.replyToMode;
@@ -106,7 +106,7 @@ async function sendNdrTextOrMedia(params: {
   const core = getNdrRuntime();
   const tableMode = core.channel.text.resolveMarkdownTableMode({
     cfg: params.cfg,
-    channel: "ndr",
+    channel: "openclaw-ndr",
     accountId: params.accountId,
   });
   const caption = core.channel.text.convertMarkdownTables(params.text ?? "", tableMode);
@@ -233,15 +233,15 @@ export function withOwnerPubkeyLocked(cfg: OpenClawConfig, ownerPubkey: string):
   const normalized = normalizePubkey(ownerPubkey);
   const channels = (cfg.channels ?? {}) as Record<string, unknown>;
   const ndrSection =
-    channels.ndr && typeof channels.ndr === "object"
-      ? (channels.ndr as Record<string, unknown>)
+    channels["openclaw-ndr"] && typeof channels["openclaw-ndr"] === "object"
+      ? (channels["openclaw-ndr"] as Record<string, unknown>)
       : {};
 
   return {
     ...cfg,
     channels: {
       ...channels,
-      ndr: {
+      "openclaw-ndr": {
         ...ndrSection,
         ownerPubkey: normalized,
       },
@@ -348,13 +348,13 @@ export function isGroupMessageAllowed(params: {
 }
 
 export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
-  id: "ndr",
+  id: "openclaw-ndr",
   meta: {
-    id: "ndr",
+    id: "openclaw-ndr",
     label: "NDR",
     selectionLabel: "NDR (Nostr Double Ratchet)",
-    docsPath: "/channels/ndr",
-    docsLabel: "ndr",
+    docsPath: "/channels/openclaw-ndr",
+    docsLabel: "openclaw-ndr",
     blurb: "Forward-secure E2E encryption via double ratchet over Nostr (chat.iris.to).",
     order: 56,
     selectionExtras: ["https://chat.iris.to"],
@@ -368,16 +368,16 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   },
   reload: {
     configPrefixes: [
-      "channels.ndr.relays",
-      "channels.ndr.enabled",
-      "channels.ndr.name",
-      "channels.ndr.ndrPath",
-      "channels.ndr.dataDir",
-      "channels.ndr.groupPolicy",
-      "channels.ndr.groupAllowFrom",
-      "channels.ndr.groups",
+      "channels.openclaw-ndr.relays",
+      "channels.openclaw-ndr.enabled",
+      "channels.openclaw-ndr.name",
+      "channels.openclaw-ndr.ndrPath",
+      "channels.openclaw-ndr.dataDir",
+      "channels.openclaw-ndr.groupPolicy",
+      "channels.openclaw-ndr.groupAllowFrom",
+      "channels.openclaw-ndr.groups",
     ],
-    noopPrefixes: ["channels.ndr.ownerPubkey"],
+    noopPrefixes: ["channels.openclaw-ndr.ownerPubkey"],
   },
   configSchema: buildChannelConfigSchema(NdrConfigSchema),
   onboarding: ndrOnboardingAdapter,
@@ -502,7 +502,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         cfg,
         accountId: aid,
       });
-      return { channel: "ndr", to: params.to };
+      return { channel: "openclaw-ndr", to: params.to };
     },
     sendMedia: async (params: { to: string; text?: string; mediaUrl?: string; accountId?: string; replyToId?: string }) => {
       const core = getNdrRuntime();
@@ -523,7 +523,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         cfg,
         accountId: aid,
       });
-      return { channel: "ndr", to: params.to };
+      return { channel: "openclaw-ndr", to: params.to };
     },
   },
 
@@ -541,7 +541,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         if (!lastError) return [];
         return [
           {
-            channel: "ndr",
+            channel: "openclaw-ndr",
             accountId: account.accountId,
             kind: "runtime" as const,
             message: `Channel error: ${lastError}`,
@@ -628,7 +628,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           const cfg = runtime.config.loadConfig();
           const route = runtime.channel.routing.resolveAgentRoute({
             cfg,
-            channel: "ndr",
+            channel: "openclaw-ndr",
             accountId: account.accountId,
             peer: { kind: "dm", id: chatId },
           });
@@ -644,7 +644,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           const cfg = runtime.config.loadConfig();
           const route = runtime.channel.routing.resolveAgentRoute({
             cfg,
-            channel: "ndr",
+            channel: "openclaw-ndr",
             accountId: account.accountId,
             peer: { kind: "group", id: groupId },
           });
@@ -707,7 +707,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
           // Resolve agent route for this chat
           const route = runtime.channel.routing.resolveAgentRoute({
             cfg,
-            channel: "ndr",
+            channel: "openclaw-ndr",
             accountId: account.accountId,
             peer: { kind: "dm", id: chatId },
           });
@@ -741,8 +741,8 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             ConversationLabel: `NDR chat ${chatId}`,
             SenderName: identityPubkey.slice(0, 8),
             SenderId: identityPubkey,
-            Provider: "ndr" as const,
-            Surface: "ndr" as const,
+            Provider: "openclaw-ndr" as const,
+            Surface: "openclaw-ndr" as const,
             MessageSid: sid,
             MessageSids: receiptMessageIds.length > 0 ? receiptMessageIds : undefined,
             ReplyToId: replyToId?.trim() || undefined,
@@ -751,7 +751,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
               : undefined,
             ReplyToSender: cachedReply?.sender,
             CommandAuthorized: true, // Owner is always authorized
-            OriginatingChannel: "ndr" as const,
+            OriginatingChannel: "openclaw-ndr" as const,
             OriginatingTo: ndrTo,
             // Media fields (if nhash URL was downloaded)
             MediaPath: media?.path,
@@ -769,7 +769,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             ctx: ctxPayload,
             updateLastRoute: {
               sessionKey: route.mainSessionKey,
-              channel: "ndr",
+              channel: "openclaw-ndr",
               to: chatId,
               accountId: route.accountId,
             },
@@ -786,7 +786,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             onStartError: (err) => {
               logTypingFailure({
                 log: (...args: unknown[]) => ctx.log?.debug(String(args.join(" "))),
-                channel: "ndr",
+                channel: "openclaw-ndr",
                 target: chatId,
                 error: err,
               });
@@ -897,7 +897,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
 
           const route = runtime.channel.routing.resolveAgentRoute({
             cfg,
-            channel: "ndr",
+            channel: "openclaw-ndr",
             accountId: account.accountId,
             peer: { kind: "group", id: groupId },
           });
@@ -932,8 +932,8 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             ConversationLabel: `NDR group ${groupId}`,
             SenderName: senderPubkey.slice(0, 8),
             SenderId: senderPubkey,
-            Provider: "ndr" as const,
-            Surface: "ndr" as const,
+            Provider: "openclaw-ndr" as const,
+            Surface: "openclaw-ndr" as const,
             MessageSid: sid,
             MessageSids: sids.length > 0 ? sids : undefined,
             ReplyToId: replyToId?.trim() || undefined,
@@ -942,7 +942,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
               : undefined,
             ReplyToSender: cachedReply?.sender,
             CommandAuthorized: true,
-            OriginatingChannel: "ndr" as const,
+            OriginatingChannel: "openclaw-ndr" as const,
             OriginatingTo: `ndr:group:${groupId}`,
             MediaPath: media?.path,
             MediaType: media?.mimeType ?? undefined,
@@ -958,7 +958,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             ctx: ctxPayload,
             updateLastRoute: {
               sessionKey: route.mainSessionKey,
-              channel: "ndr",
+              channel: "openclaw-ndr",
               to: groupId,
               accountId: route.accountId,
             },

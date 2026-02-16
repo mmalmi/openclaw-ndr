@@ -30,7 +30,7 @@ export interface ResolvedNdrAccount {
  */
 export function listNdrAccountIds(cfg: OpenClawConfig): string[] {
   const channels = (cfg.channels ?? {}) as Record<string, unknown>;
-  const ndrConfig = channels.ndr;
+  const ndrConfig = channels["openclaw-ndr"];
   if (!ndrConfig || typeof ndrConfig !== "object") {
     return [];
   }
@@ -55,7 +55,7 @@ export function resolveNdrAccount(opts: {
 }): ResolvedNdrAccount {
   const { cfg, accountId = "default" } = opts;
   const channels = (cfg.channels ?? {}) as Record<string, unknown>;
-  const ndrConfig = (channels.ndr ?? {}) as NdrConfig;
+  const ndrConfig = (channels["openclaw-ndr"] ?? {}) as NdrConfig;
 
   // ndr manages its own identity in its config.json (auto-generates on first use)
   const configured = true;

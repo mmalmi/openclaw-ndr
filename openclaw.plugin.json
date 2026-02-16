@@ -1,7 +1,7 @@
 {
   "id": "openclaw-ndr",
   "channels": [
-    "ndr"
+    "openclaw-ndr"
   ],
   "configSchema": {
     "type": "object",

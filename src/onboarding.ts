@@ -3,7 +3,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { startNdrBus } from "./ndr-bus.js";
 import { listNdrAccountIds, resolveNdrAccount, resolveDefaultNdrAccountId } from "./types.js";
 
-const channel = "ndr" as const;
+const channel = "openclaw-ndr" as const;
 
 type ChannelOnboardingAdapter = {
   channel: typeof channel;
@@ -62,8 +62,8 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
       ...cfg,
       channels: {
         ...cfg.channels,
-        ndr: {
-          ...cfg.channels?.ndr,
+        "openclaw-ndr": {
+          ...(cfg.channels as Record<string, unknown>)?.["openclaw-ndr"] as Record<string, unknown>,
           enabled: true,
         },
       },
@@ -245,8 +245,8 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
         ...baseCfg,
         channels: {
           ...baseCfg.channels,
-          ndr: {
-            ...baseCfg.channels?.ndr,
+          "openclaw-ndr": {
+            ...(baseCfg.channels as Record<string, unknown>)?.["openclaw-ndr"] as Record<string, unknown>,
             enabled: true,
             ownerPubkey,
           },
@@ -286,7 +286,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
     ...cfg,
     channels: {
       ...cfg.channels,
-      ndr: { ...cfg.channels?.ndr, enabled: false },
+      "openclaw-ndr": { ...(cfg.channels as Record<string, unknown>)?.["openclaw-ndr"] as Record<string, unknown>, enabled: false },
     },
   }),
 };
