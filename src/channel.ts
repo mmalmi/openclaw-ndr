@@ -102,6 +102,7 @@ async function sendNdrTextOrMedia(params: {
   replyToId?: string;
   cfg: OpenClawConfig;
   accountId: string;
+  log?: { info: (...args: unknown[]) => void; error: (...args: unknown[]) => void } | null;
 }): Promise<void> {
   const core = getNdrRuntime();
   const tableMode = core.channel.text.resolveMarkdownTableMode({
@@ -112,9 +113,13 @@ async function sendNdrTextOrMedia(params: {
   const caption = core.channel.text.convertMarkdownTables(params.text ?? "", tableMode);
   const replyToId = params.replyToId?.trim() || undefined;
 
+  params.log?.info(`[sendNdrTextOrMedia] to=${params.to} isGroup=${params.isGroup} caption="${caption.slice(0, 80)}" captionLen=${caption.length} replyToId=${replyToId} mediaUrl=${params.mediaUrl ?? "none"}`);
+
   if (!params.mediaUrl) {
     if (params.isGroup) {
+      params.log?.info(`[sendNdrTextOrMedia] calling sendGroupMessageWithRetry`);
       await sendGroupMessageWithRetry(params.bus, params.to, caption, { replyToId });
+      params.log?.info(`[sendNdrTextOrMedia] sendGroupMessageWithRetry returned OK`);
     } else {
       await params.bus.sendMessage(params.to, caption, { replyToId });
     }
@@ -636,7 +641,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
   },
 
   gateway: {
-    startAccount: async (ctx: { account: ResolvedNdrAccount; setStatus: (s: Record<string, unknown>) => void; log?: { info: (m: string) => void; debug: (m: string) => void; warn: (m: string) => void; error: (m: string) => void } }) => {
+    startAccount: async (ctx: { account: ResolvedNdrAccount; abortSignal?: AbortSignal; setStatus: (s: Record<string, unknown>) => void; log?: { info: (m: string) => void; debug: (m: string) => void; warn: (m: string) => void; error: (m: string) => void } }) => {
       const account = ctx.account;
       ctx.setStatus({
         accountId: account.accountId,
@@ -935,19 +940,24 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             },
           });
 
-          // Dispatch the message
-          await runtime.channel.reply.dispatchReplyFromConfig({
-            ctx: ctxPayload,
-            cfg,
-            dispatcher,
-            replyOptions: {
-              ...replyOptions,
-              onModelSelected: (modelCtx: unknown) => {
-                prefixContext.onModelSelected(modelCtx);
+          // Dispatch the message — mirror withReplyDispatcher pattern from gateway
+          try {
+            await runtime.channel.reply.dispatchReplyFromConfig({
+              ctx: ctxPayload,
+              cfg,
+              dispatcher,
+              replyOptions: {
+                ...replyOptions,
+                onModelSelected: (modelCtx: unknown) => {
+                  prefixContext.onModelSelected(modelCtx);
+                },
               },
-            },
-          });
-          markDispatchIdle();
+            });
+          } finally {
+            (dispatcher as any).markComplete?.();
+            try { await (dispatcher as any).waitForIdle?.(); } catch {}
+            markDispatchIdle();
+          }
         },
         onGroupMessage: async (groupId, messageId, senderPubkey, text, _replyFn, media, replyToId) => {
           ctx.log?.debug(`[${account.accountId}] Group message from ${senderPubkey} in group ${groupId}: ${text.slice(0, 50)}...${media ? ` [media: ${media.path}]` : ""}`);
@@ -1050,6 +1060,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
             onReplyStart: typingCallbacks.onReplyStart,
             deliver: async (payload: Record<string, unknown>) => {
+              ctx.log?.info(`[${account.accountId}] Group deliver callback invoked for ${groupId}, payload keys: ${Object.keys(payload).join(",")}, text length: ${typeof payload.text === "string" ? payload.text.length : 0}`);
               const text = typeof payload.text === "string" ? payload.text : "";
               const mediaUrls = Array.isArray(payload.mediaUrls)
                 ? payload.mediaUrls.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
@@ -1058,6 +1069,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
               const mediaList = mediaUrls.length > 0 ? mediaUrls : mediaUrl ? [mediaUrl] : [];
 
               if (!text && mediaList.length === 0) {
+                ctx.log?.warn(`[${account.accountId}] Group deliver: empty text and no media, skipping`);
                 return;
               }
 
@@ -1091,6 +1103,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
                   replyToId,
                   cfg,
                   accountId: account.accountId,
+                  log: ctx.log as any,
                 });
                 if (replyToMode === "first" && replyToId) {
                   hasRepliedRef = true;
@@ -1113,18 +1126,29 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             },
           });
 
-          await runtime.channel.reply.dispatchReplyFromConfig({
-            ctx: ctxPayload,
-            cfg,
-            dispatcher,
-            replyOptions: {
-              ...replyOptions,
-              onModelSelected: (modelCtx: unknown) => {
-                prefixContext.onModelSelected(modelCtx);
+          ctx.log?.info(`[${account.accountId}] Calling dispatchReplyFromConfig for group ${groupId}`);
+          try {
+            await runtime.channel.reply.dispatchReplyFromConfig({
+              ctx: ctxPayload,
+              cfg,
+              dispatcher,
+              replyOptions: {
+                ...replyOptions,
+                onModelSelected: (modelCtx: unknown) => {
+                  prefixContext.onModelSelected(modelCtx);
+                },
               },
-            },
-          });
-          markDispatchIdle();
+            });
+            ctx.log?.info(`[${account.accountId}] dispatchReplyFromConfig returned for group ${groupId}`);
+          } finally {
+            ctx.log?.info(`[${account.accountId}] Calling markComplete + waitForIdle for group ${groupId}`);
+            (dispatcher as any).markComplete?.();
+            try { await (dispatcher as any).waitForIdle?.(); } catch (e) {
+              ctx.log?.error(`[${account.accountId}] waitForIdle error for group ${groupId}: ${String(e)}`);
+            }
+            ctx.log?.info(`[${account.accountId}] waitForIdle resolved for group ${groupId}`);
+            markDispatchIdle();
+          }
         },
         onGroupMetadata: async (groupId, action, senderPubkey) => {
           if (action !== "created") return;
@@ -1193,14 +1217,25 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
 
       ctx.log?.info(`[${account.accountId}] NDR provider started`);
 
-      // Return cleanup function
-      return {
-        stop: () => {
+      // The gateway expects startAccount to return a long-lived promise
+      // that stays pending while the channel is alive. Resolving early
+      // causes the gateway to think the channel stopped and restart it.
+      await new Promise<void>((resolve) => {
+        const cleanup = () => {
           bus.close();
           activeBuses.delete(account.accountId);
           ctx.log?.info(`[${account.accountId}] NDR provider stopped`);
-        },
-      };
+          resolve();
+        };
+
+        if (ctx.abortSignal) {
+          if (ctx.abortSignal.aborted) {
+            cleanup();
+            return;
+          }
+          ctx.abortSignal.addEventListener("abort", cleanup, { once: true });
+        }
+      });
     },
   },
 };
