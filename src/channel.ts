@@ -206,7 +206,10 @@ function readRequiredStringParam(params: Record<string, unknown>, key: string): 
 }
 
 function resolveReactionTarget(rawTarget: string): NdrReactionTarget {
-  const { normalized, forceGroup } = normalizeNdrTarget(rawTarget, "NDR react requires target chat/group id.");
+  const { normalized, forceGroup } = normalizeNdrTarget(
+    rawTarget,
+    "NDR react requires target pubkey/chat/group id.",
+  );
 
   if (forceGroup || isGroupId(normalized)) {
     return { kind: "group", groupId: normalized };
@@ -470,7 +473,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
 
   messaging: {
     normalizeTarget: (target: string) => {
-      // NDR uses chat IDs, not pubkeys directly
+      // NDR direct messages are owner-pubkey centric; chat IDs still work for compatibility.
       return target.trim();
     },
     targetResolver: {
@@ -479,7 +482,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         // Chat IDs are short hex strings
         return /^[0-9a-fA-F]{8}$/.test(trimmed) || isGroupId(trimmed) || trimmed.startsWith("npub1");
       },
-      hint: "<chat_id|group_id|npub>",
+      hint: "<pubkey|chat_id|group_id>",
     },
   },
   actions: {
@@ -560,7 +563,10 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
       const cfg = core.config.loadConfig();
-      const { normalized: to, forceGroup } = normalizeNdrTarget(params.to, "NDR send requires target chat/group id.");
+      const { normalized: to, forceGroup } = normalizeNdrTarget(
+        params.to,
+        "NDR send requires target pubkey/chat/group id.",
+      );
       const isGroup = forceGroup || isGroupId(to);
       await sendNdrTextOrMedia({
         bus,
@@ -581,7 +587,10 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
         throw new Error(`NDR bus not running for account ${aid}`);
       }
       const cfg = core.config.loadConfig();
-      const { normalized: to, forceGroup } = normalizeNdrTarget(params.to, "NDR send requires target chat/group id.");
+      const { normalized: to, forceGroup } = normalizeNdrTarget(
+        params.to,
+        "NDR send requires target pubkey/chat/group id.",
+      );
       const isGroup = forceGroup || isGroupId(to);
       await sendNdrTextOrMedia({
         bus,
@@ -906,7 +915,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
                 const replyToId = shouldUseReplyRef();
                 await sendNdrTextOrMedia({
                   bus,
-                  to: chatId,
+                  to: identityPubkey,
                   isGroup: false,
                   text: opts.text,
                   mediaUrl: opts.mediaUrl,
@@ -1189,7 +1198,7 @@ export const ndrPlugin: ChannelPlugin<ResolvedNdrAccount> = {
             }
 
             const notice = `Group invite ${groupId} from ${senderLabel}. Run: ndr group accept ${groupId} (or ndr group delete ${groupId}).`;
-            await bus.sendMessage(ownerChat.id, notice);
+            await bus.sendMessage(ownerChat.their_pubkey, notice);
           } catch (err) {
             ctx.log?.warn(
               `[${account.accountId}] Failed to notify owner about group invite ${groupId}: ${String(err)}`,

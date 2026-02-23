@@ -236,7 +236,7 @@ export const ndrOnboardingAdapter: ChannelOnboardingAdapter = {
 
       // Send hello message once paired.
       try {
-        await bus.sendMessage(chatId, "Hello! I'm your openclaw agent.");
+        await bus.sendMessage(ownerPubkey, "Hello! I'm your openclaw agent.");
       } catch (err) {
         sendError = err instanceof Error ? err.message : String(err);
       }

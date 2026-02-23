@@ -44,7 +44,7 @@ export interface NdrBusOptions {
 }
 
 export interface NdrBusHandle {
-  sendMessage: (chatId: string, text: string, opts?: { replyToId?: string }) => Promise<void>;
+  sendMessage: (target: string, text: string, opts?: { replyToId?: string }) => Promise<void>;
   sendGroupMessage: (groupId: string, text: string, opts?: { replyToId?: string }) => Promise<void>;
   acceptGroup: (groupId: string) => Promise<void>;
   react: (chatId: string, messageId: string, emoji: string) => Promise<void>;
@@ -375,7 +375,7 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
           if (replyRef) {
             args.push("--reply", replyRef);
           }
-          args.push(chatId, text);
+          args.push(senderPubkey, text);
           const result = await runNdrCommand(ndrPath, args, ndrEnv);
           if (result.status !== "ok") {
             throw new Error(result.error || "Failed to send message");
@@ -545,13 +545,13 @@ export async function startNdrBus(options: NdrBusOptions): Promise<NdrBusHandle>
   startListening();
 
   return {
-    sendMessage: async (chatId: string, text: string, opts?: { replyToId?: string }) => {
+    sendMessage: async (target: string, text: string, opts?: { replyToId?: string }) => {
       const args = [...baseArgs, "send"];
       const replyRef = opts?.replyToId?.trim();
       if (replyRef) {
         args.push("--reply", replyRef);
       }
-      args.push(chatId, text);
+      args.push(target, text);
       const result = await runNdrCommand(ndrPath, args, ndrEnv);
       if (result.status !== "ok") {
         throw new Error(result.error || "Failed to send message");
