@@ -20,6 +20,7 @@ type SetupResult = {
   capturedOptions: { current: any };
   enqueueSystemEvent: ReturnType<typeof vi.fn>;
   resolveAgentRoute: ReturnType<typeof vi.fn>;
+  getActiveNdrBuses: () => Map<string, unknown>;
 };
 
 async function setupPlugin(): Promise<SetupResult> {
@@ -105,7 +106,7 @@ async function setupPlugin(): Promise<SetupResult> {
     }),
   }));
 
-  const { ndrPlugin } = await import("./channel.js");
+  const { ndrPlugin, getActiveNdrBuses } = await import("./channel.js");
 
   return {
     ndrPlugin,
@@ -118,6 +119,29 @@ async function setupPlugin(): Promise<SetupResult> {
     capturedOptions,
     enqueueSystemEvent,
     resolveAgentRoute,
+    getActiveNdrBuses,
+  };
+}
+
+async function startAccountForTest(params: {
+  ndrPlugin: any;
+  cfg: Record<string, unknown>;
+  getActiveNdrBuses: () => Map<string, unknown>;
+}) {
+  const account = params.ndrPlugin.config.resolveAccount(params.cfg, "default");
+  const abortController = new AbortController();
+  const startPromise = params.ndrPlugin.gateway.startAccount({
+    account,
+    abortSignal: abortController.signal,
+    setStatus: vi.fn(),
+    log: createLogger(),
+  });
+  await expect.poll(() => params.getActiveNdrBuses().size).toBe(1);
+  return {
+    stop: async () => {
+      abortController.abort();
+      await startPromise;
+    },
   };
 }
 
@@ -128,85 +152,77 @@ describe("ndr reaction support", () => {
   });
 
   it("routes react action to direct chats and groups", async () => {
-    const { ndrPlugin, cfg, mockBus } = await setupPlugin();
+    const { ndrPlugin, cfg, mockBus, getActiveNdrBuses } = await setupPlugin();
 
     const actions = ndrPlugin.actions?.listActions?.({ cfg }) ?? [];
     expect(actions).toContain("react");
 
-    const account = ndrPlugin.config.resolveAccount(cfg, "default");
-    const runtime = await ndrPlugin.gateway.startAccount({
-      account,
-      setStatus: vi.fn(),
-      log: createLogger(),
-    });
+    const runtime = await startAccountForTest({ ndrPlugin, cfg, getActiveNdrBuses });
+    try {
+      await ndrPlugin.actions.handleAction({
+        action: "react",
+        params: {
+          to: "cafebabe",
+          messageId: "dm-msg-1",
+          emoji: "🔥",
+        },
+        cfg,
+        accountId: "default",
+      });
 
-    await ndrPlugin.actions.handleAction({
-      action: "react",
-      params: {
-        to: "cafebabe",
-        messageId: "dm-msg-1",
-        emoji: "🔥",
-      },
-      cfg,
-      accountId: "default",
-    });
+      expect(mockBus.react).toHaveBeenCalledWith("cafebabe", "dm-msg-1", "🔥");
 
-    expect(mockBus.react).toHaveBeenCalledWith("cafebabe", "dm-msg-1", "🔥");
+      await ndrPlugin.actions.handleAction({
+        action: "react",
+        params: {
+          to: "11111111-1111-1111-1111-111111111111",
+          messageId: "group-msg-1",
+          emoji: "👍",
+        },
+        cfg,
+        accountId: "default",
+      });
 
-    await ndrPlugin.actions.handleAction({
-      action: "react",
-      params: {
-        to: "11111111-1111-1111-1111-111111111111",
-        messageId: "group-msg-1",
-        emoji: "👍",
-      },
-      cfg,
-      accountId: "default",
-    });
-
-    expect(mockBus.reactGroup).toHaveBeenCalledWith(
-      "11111111-1111-1111-1111-111111111111",
-      "group-msg-1",
-      "👍",
-    );
-
-    runtime.stop();
+      expect(mockBus.reactGroup).toHaveBeenCalledWith(
+        "11111111-1111-1111-1111-111111111111",
+        "group-msg-1",
+        "👍",
+      );
+    } finally {
+      await runtime.stop();
+    }
   });
 
   it("surfaces group reaction events as system events", async () => {
-    const { ndrPlugin, cfg, capturedOptions, enqueueSystemEvent, resolveAgentRoute } = await setupPlugin();
+    const { ndrPlugin, cfg, capturedOptions, enqueueSystemEvent, resolveAgentRoute, getActiveNdrBuses } =
+      await setupPlugin();
+    const runtime = await startAccountForTest({ ndrPlugin, cfg, getActiveNdrBuses });
+    try {
+      const onGroupReaction = capturedOptions.current?.onGroupReaction;
+      expect(typeof onGroupReaction).toBe("function");
 
-    const account = ndrPlugin.config.resolveAccount(cfg, "default");
-    const runtime = await ndrPlugin.gateway.startAccount({
-      account,
-      setStatus: vi.fn(),
-      log: createLogger(),
-    });
+      onGroupReaction(
+        "22222222-2222-2222-2222-222222222222",
+        "b".repeat(64),
+        "msg-42",
+        "🎉",
+      );
 
-    const onGroupReaction = capturedOptions.current?.onGroupReaction;
-    expect(typeof onGroupReaction).toBe("function");
+      expect(resolveAgentRoute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          peer: { kind: "group", id: "22222222-2222-2222-2222-222222222222" },
+        }),
+      );
 
-    onGroupReaction(
-      "22222222-2222-2222-2222-222222222222",
-      "b".repeat(64),
-      "msg-42",
-      "🎉",
-    );
-
-    expect(resolveAgentRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        peer: { kind: "group", id: "22222222-2222-2222-2222-222222222222" },
-      }),
-    );
-
-    expect(enqueueSystemEvent).toHaveBeenCalledWith(
-      expect.stringContaining("NDR group reaction: 🎉"),
-      expect.objectContaining({
-        sessionKey: "session-key",
-        contextKey: "ndr:group-reaction:add:22222222-2222-2222-2222-222222222222:msg-42:" + "b".repeat(64) + ":🎉",
-      }),
-    );
-
-    runtime.stop();
+      expect(enqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("NDR group reaction: 🎉"),
+        expect.objectContaining({
+          sessionKey: "session-key",
+          contextKey: "ndr:group-reaction:add:22222222-2222-2222-2222-222222222222:msg-42:" + "b".repeat(64) + ":🎉",
+        }),
+      );
+    } finally {
+      await runtime.stop();
+    }
   });
 });

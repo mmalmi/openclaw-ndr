@@ -80,9 +80,31 @@ async function setupPlugin() {
     startNdrBus: vi.fn(async () => mockBus),
   }));
 
-  const { ndrPlugin } = await import("./channel.js");
+  const { ndrPlugin, getActiveNdrBuses } = await import("./channel.js");
 
-  return { ndrPlugin, cfg, mockBus };
+  return { ndrPlugin, cfg, mockBus, getActiveNdrBuses };
+}
+
+async function startAccountForTest(params: {
+  ndrPlugin: any;
+  cfg: Record<string, unknown>;
+  getActiveNdrBuses: () => Map<string, unknown>;
+}) {
+  const account = params.ndrPlugin.config.resolveAccount(params.cfg, "default");
+  const abortController = new AbortController();
+  const startPromise = params.ndrPlugin.gateway.startAccount({
+    account,
+    abortSignal: abortController.signal,
+    setStatus: vi.fn(),
+    log: createLogger(),
+  });
+  await expect.poll(() => params.getActiveNdrBuses().size).toBe(1);
+  return {
+    stop: async () => {
+      abortController.abort();
+      await startPromise;
+    },
+  };
 }
 
 describe("ndr outbound target routing", () => {
@@ -92,65 +114,58 @@ describe("ndr outbound target routing", () => {
   });
 
   it("routes ndr:group:<id> targets to group sends", async () => {
-    const { ndrPlugin, cfg, mockBus } = await setupPlugin();
+    const { ndrPlugin, cfg, mockBus, getActiveNdrBuses } = await setupPlugin();
+    const runtime = await startAccountForTest({ ndrPlugin, cfg, getActiveNdrBuses });
 
-    const account = ndrPlugin.config.resolveAccount(cfg, "default");
-    const runtime = await ndrPlugin.gateway.startAccount({
-      account,
-      setStatus: vi.fn(),
-      log: createLogger(),
-    });
+    try {
+      await ndrPlugin.outbound.sendText({
+        to: "ndr:group:11111111-1111-1111-1111-111111111111",
+        text: "hello group",
+        accountId: "default",
+      });
 
-    await ndrPlugin.outbound.sendText({
-      to: "ndr:group:11111111-1111-1111-1111-111111111111",
-      text: "hello group",
-      accountId: "default",
-    });
-
-    expect(mockBus.sendGroupMessage).toHaveBeenCalledWith(
-      "11111111-1111-1111-1111-111111111111",
-      "hello group",
-      { replyToId: undefined },
-    );
-    expect(mockBus.sendMessage).not.toHaveBeenCalled();
-
-    runtime.stop();
+      expect(mockBus.sendGroupMessage).toHaveBeenCalledWith(
+        "11111111-1111-1111-1111-111111111111",
+        "hello group",
+        { replyToId: undefined },
+      );
+      expect(mockBus.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      await runtime.stop();
+    }
   });
 
   it("retries group sends when ndr reports group not found", async () => {
-    const { ndrPlugin, cfg, mockBus } = await setupPlugin();
+    const { ndrPlugin, cfg, mockBus, getActiveNdrBuses } = await setupPlugin();
 
     mockBus.sendGroupMessage
       .mockRejectedValueOnce(new Error('{"status":"error","command":"","error":"Group not found: g"}'))
       .mockResolvedValue(undefined);
 
-    const account = ndrPlugin.config.resolveAccount(cfg, "default");
-    const runtime = await ndrPlugin.gateway.startAccount({
-      account,
-      setStatus: vi.fn(),
-      log: createLogger(),
-    });
+    const runtime = await startAccountForTest({ ndrPlugin, cfg, getActiveNdrBuses });
 
-    await ndrPlugin.outbound.sendText({
-      to: "ndr:group:11111111-1111-1111-1111-111111111111",
-      text: "hello group",
-      accountId: "default",
-    });
+    try {
+      await ndrPlugin.outbound.sendText({
+        to: "ndr:group:11111111-1111-1111-1111-111111111111",
+        text: "hello group",
+        accountId: "default",
+      });
 
-    expect(mockBus.sendGroupMessage).toHaveBeenCalledTimes(2);
-    expect(mockBus.sendGroupMessage).toHaveBeenNthCalledWith(
-      1,
-      "11111111-1111-1111-1111-111111111111",
-      "hello group",
-      { replyToId: undefined },
-    );
-    expect(mockBus.sendGroupMessage).toHaveBeenNthCalledWith(
-      2,
-      "11111111-1111-1111-1111-111111111111",
-      "hello group",
-      { replyToId: undefined },
-    );
-
-    runtime.stop();
+      expect(mockBus.sendGroupMessage).toHaveBeenCalledTimes(2);
+      expect(mockBus.sendGroupMessage).toHaveBeenNthCalledWith(
+        1,
+        "11111111-1111-1111-1111-111111111111",
+        "hello group",
+        { replyToId: undefined },
+      );
+      expect(mockBus.sendGroupMessage).toHaveBeenNthCalledWith(
+        2,
+        "11111111-1111-1111-1111-111111111111",
+        "hello group",
+        { replyToId: undefined },
+      );
+    } finally {
+      await runtime.stop();
+    }
   });
 });

@@ -17,6 +17,7 @@ type SetupResult = {
     close: ReturnType<typeof vi.fn>;
   };
   capturedOptions: { current: any };
+  getActiveNdrBuses: () => Map<string, unknown>;
 };
 
 async function setupPlugin(ownerPubkey: string): Promise<SetupResult> {
@@ -99,7 +100,7 @@ async function setupPlugin(ownerPubkey: string): Promise<SetupResult> {
     }),
   }));
 
-  const { ndrPlugin } = await import("./channel.js");
+  const { ndrPlugin, getActiveNdrBuses } = await import("./channel.js");
   return {
     ndrPlugin,
     cfg,
@@ -108,6 +109,29 @@ async function setupPlugin(ownerPubkey: string): Promise<SetupResult> {
       close,
     },
     capturedOptions,
+    getActiveNdrBuses,
+  };
+}
+
+async function startAccountForTest(params: {
+  ndrPlugin: any;
+  cfg: Record<string, unknown>;
+  getActiveNdrBuses: () => Map<string, unknown>;
+}) {
+  const account = params.ndrPlugin.config.resolveAccount(params.cfg, "default");
+  const abortController = new AbortController();
+  const startPromise = params.ndrPlugin.gateway.startAccount({
+    account,
+    abortSignal: abortController.signal,
+    setStatus: vi.fn(),
+    log: createLogger(),
+  });
+  await expect.poll(() => params.getActiveNdrBuses().size).toBe(1);
+  return {
+    stop: async () => {
+      abortController.abort();
+      await startPromise;
+    },
   };
 }
 
@@ -122,66 +146,60 @@ describe("ndr group invite auto-accept", () => {
   });
 
   it("retries owner auto-accept and marks seen only after success", async () => {
-    vi.useFakeTimers();
     const owner = "a".repeat(64);
-    const { ndrPlugin, cfg, mockBus, capturedOptions } = await setupPlugin(owner);
+    const { ndrPlugin, cfg, mockBus, capturedOptions, getActiveNdrBuses } = await setupPlugin(owner);
 
     mockBus.acceptGroup
       .mockRejectedValueOnce(new Error("No such file or directory (os error 2)"))
       .mockResolvedValue(undefined);
 
-    const account = ndrPlugin.config.resolveAccount(cfg, "default");
-    const runtime = await ndrPlugin.gateway.startAccount({
-      account,
-      setStatus: vi.fn(),
-      log: createLogger(),
-    });
+    const runtime = await startAccountForTest({ ndrPlugin, cfg, getActiveNdrBuses });
+    try {
+      vi.useFakeTimers();
+      const onGroupMetadata = capturedOptions.current?.onGroupMetadata;
+      expect(typeof onGroupMetadata).toBe("function");
 
-    const onGroupMetadata = capturedOptions.current?.onGroupMetadata;
-    expect(typeof onGroupMetadata).toBe("function");
+      const first = onGroupMetadata("group-1", "created", owner);
+      await vi.runAllTimersAsync();
+      await first;
 
-    const first = onGroupMetadata("group-1", "created", owner);
-    await vi.runAllTimersAsync();
-    await first;
+      expect(mockBus.acceptGroup).toHaveBeenCalledTimes(2);
 
-    expect(mockBus.acceptGroup).toHaveBeenCalledTimes(2);
-
-    // Seen marker should only be set after successful accept; duplicate events should no-op.
-    await onGroupMetadata("group-1", "created", owner);
-    expect(mockBus.acceptGroup).toHaveBeenCalledTimes(2);
-
-    runtime.stop();
+      // Seen marker should only be set after successful accept; duplicate events should no-op.
+      await onGroupMetadata("group-1", "created", owner);
+      expect(mockBus.acceptGroup).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      await runtime.stop();
+    }
   });
 
   it("does not permanently suppress owner auto-accept after failed attempts", async () => {
-    vi.useFakeTimers();
     const owner = "b".repeat(64);
-    const { ndrPlugin, cfg, mockBus, capturedOptions } = await setupPlugin(owner);
+    const { ndrPlugin, cfg, mockBus, capturedOptions, getActiveNdrBuses } = await setupPlugin(owner);
 
     mockBus.acceptGroup.mockRejectedValue(new Error("temporary failure"));
 
-    const account = ndrPlugin.config.resolveAccount(cfg, "default");
-    const runtime = await ndrPlugin.gateway.startAccount({
-      account,
-      setStatus: vi.fn(),
-      log: createLogger(),
-    });
+    const runtime = await startAccountForTest({ ndrPlugin, cfg, getActiveNdrBuses });
+    try {
+      vi.useFakeTimers();
+      const onGroupMetadata = capturedOptions.current?.onGroupMetadata;
+      expect(typeof onGroupMetadata).toBe("function");
 
-    const onGroupMetadata = capturedOptions.current?.onGroupMetadata;
-    expect(typeof onGroupMetadata).toBe("function");
+      const first = onGroupMetadata("group-2", "created", owner);
+      await vi.runAllTimersAsync();
+      await first;
+      const firstAttemptCount = mockBus.acceptGroup.mock.calls.length;
+      expect(firstAttemptCount).toBeGreaterThan(1);
 
-    const first = onGroupMetadata("group-2", "created", owner);
-    await vi.runAllTimersAsync();
-    await first;
-    const firstAttemptCount = mockBus.acceptGroup.mock.calls.length;
-    expect(firstAttemptCount).toBeGreaterThan(1);
+      const second = onGroupMetadata("group-2", "created", owner);
+      await vi.runAllTimersAsync();
+      await second;
 
-    const second = onGroupMetadata("group-2", "created", owner);
-    await vi.runAllTimersAsync();
-    await second;
-
-    expect(mockBus.acceptGroup.mock.calls.length).toBeGreaterThan(firstAttemptCount);
-
-    runtime.stop();
+      expect(mockBus.acceptGroup.mock.calls.length).toBeGreaterThan(firstAttemptCount);
+    } finally {
+      vi.useRealTimers();
+      await runtime.stop();
+    }
   });
 });
